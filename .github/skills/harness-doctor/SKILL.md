@@ -6,7 +6,7 @@ argument-hint: "[mode:report|mode:fix]"
 
 # Harness Doctor
 
-Diagnose the health of an installed autoharness harness. Produces a graded per-category health report covering manifest integrity, version drift, file completeness, cross-reference validity, MCP tool availability, and template variable residue.
+Diagnose the health of an installed gsd harness. Produces a graded per-category health report covering manifest integrity, version drift, file completeness, cross-reference validity, MCP tool availability, and template variable residue.
 
 ## When to Use
 
@@ -36,8 +36,8 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 
 | Variable | Purpose |
 |---|---|
-| `.autoharness/harness-manifest.yaml` | Path to the installed harness manifest (default: `.autoharness/harness-manifest.yaml`) |
-| `1.5.0` | Install-time autoharness version baked at install; recorded for reference. Current-version drift is resolved live via the `autoharness version` CLI, not from this value |
+| `.gsd/harness-manifest.yaml` | Path to the installed harness manifest (default: `.gsd/harness-manifest.yaml`) |
+| `1.5.0` | Install-time gsd version baked at install; recorded for reference. Current-version drift is resolved live via the `gsd version` CLI, not from this value |
 
 ## Workflow
 
@@ -45,11 +45,11 @@ This is a leaf executor. No subagent spawning. Maximum depth: 0.
 
 Determine what is installed before running any checks.
 
-1. Check for the harness manifest at `.autoharness/harness-manifest.yaml`.
+1. Check for the harness manifest at `.gsd/harness-manifest.yaml`.
    * If absent: record **MISSING MANIFEST** — set scope-detection grade to F and skip Phases 2 and 3. Phases 4–6 proceed using directory heuristics.
 2. If the manifest is present, load it and extract:
    * `schema_version`
-   * `autoharness_version` (the version that performed the install)
+   * `gsd_version` (the version that performed the install)
    * `installed_at` timestamp
    * `artifacts` — the array of installed artifact objects; each has a `path` (workspace-relative), `checksum`, `primitive`, `template`, and optional `artifact_type`
 3. Enumerate artifact directories on disk: `.github/agents`, `.github/skills`, `.github/instructions`, `.github/prompts`, `.github/policies`.
@@ -66,11 +66,11 @@ Determine what is installed before running any checks.
 
 **Skip condition**: Skip if Phase 1 found no manifest.
 
-Compare the version that performed the install against the current autoharness version.
+Compare the version that performed the install against the current gsd version.
 
-1. Read `autoharness_version` from the manifest (the version that performed the install).
-2. Resolve the **current** autoharness version live by running the `autoharness version` CLI at diagnostic time (this is the version that would perform upgrades).
-   * If the CLI is unavailable, current-version resolution has **failed** — do NOT substitute the install-time `1.5.0` value as the current version (comparing install-time against install-time would report a false match). Record **WARN — current autoharness version could not be resolved; drift undetectable** and skip the drift classification below.
+1. Read `gsd_version` from the manifest (the version that performed the install).
+2. Resolve the **current** gsd version live by running the `gsd version` CLI at diagnostic time (this is the version that would perform upgrades).
+   * If the CLI is unavailable, current-version resolution has **failed** — do NOT substitute the install-time `1.5.0` value as the current version (comparing install-time against install-time would report a false match). Record **WARN — current gsd version could not be resolved; drift undetectable** and skip the drift classification below.
 3. When the current version is resolved, compare it against the manifest version and classify the drift:
 
 | Condition | Signal |
@@ -212,7 +212,7 @@ Produce the health report with these sections:
 In `mode:fix`, apply only these deterministic, low-risk repairs:
 
 * **Phase 1**: Create missing artifact directories derived from `artifacts[*].path` if the parent path exists (empty directory creation only — never generate content).
-* **Phase 6**: Quarantine clearly orphaned `.tmpl` extension files accidentally copied to `.github/` by moving them to `.autoharness/quarantine/` (never delete). Record the source path, destination path, and reason. Prompt the operator to review quarantined files before permanent removal.
+* **Phase 6**: Quarantine clearly orphaned `.tmpl` extension files accidentally copied to `.github/` by moving them to `.gsd/quarantine/` (never delete). Record the source path, destination path, and reason. Prompt the operator to review quarantined files before permanent removal.
 
 All other findings are report-only. Source files, agent definitions, and skill content are never auto-modified by harness-doctor.
 
@@ -232,4 +232,4 @@ After applying repairs, re-run the affected phase to confirm the finding is reso
 
 This skill operates at **Tier 1 (Fast/Cheap)**. All checks are deterministic pattern-matching and file system inspection. No complex reasoning is required.
 
-Generated by autoharness | Template: harness-doctor/SKILL.md.tmpl
+Generated by gsd | Template: harness-doctor/SKILL.md.tmpl

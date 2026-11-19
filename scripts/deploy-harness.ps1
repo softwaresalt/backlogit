@@ -9,14 +9,14 @@
 #   preflight  -> verify prerequisites (fail closed on missing hard prereqs)
 #   bootstrap  -> locate/acquire autoharness_home (global; opt-in via -Bootstrap)
 #   register   -> run autoharness setup-* / copilot plugin install
-#   scaffold   -> write .autoharness/config.yaml (preset + resolved capability packs)
+#   scaffold   -> write .gsd/config.yaml (preset + resolved capability packs)
 #   compose    -> HANDOFF ONLY: print the /install-harness command; NO template
 #                 resolution happens here (that is the agent's job)
 #   verify     -> optional deterministic `autoharness verify-workspace`
 #
 # Additive checklist phase (114-F / 47971057 bounded, non-D2): runs after
 # preflight and before bootstrap. Detects per-pack PRESENCE and VERSION for
-# backlogit/engram/graphtor-docs (`<tool> --version`; graphtor-docs also checks
+# backlogit/engram/kbdb (`<tool> --version`; kbdb also checks
 # the workspace-local .graphtor/bin/ path) and prints a REPORT-ONLY recommended
 # action per pack (retain-present / needs-install[deferred] /
 # unsupported-undetectable). It performs NO install/upgrade/provisioning.
@@ -32,7 +32,7 @@
 # mutating anything. Single deterministic pass per phase (no internal retry loop).
 #
 # Idempotent: an existing autoharness_home is detected and reused; an existing
-# .autoharness/config.yaml is backed up (timestamped) before overwrite and only
+# .gsd/config.yaml is backed up (timestamped) before overwrite and only
 # overwritten with -Force; an existing .env.local is never clobbered.
 #
 # Exit codes:
@@ -86,7 +86,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 $WorkspaceRoot = (Get-Location).Path
 $PythonBin = "python"
-$AutoharnessHomeDefault = "$HOME/.autoharness"
+$AutoharnessHomeDefault = "$HOME/.gsd"
 $PackRegistryRelPath = "templates/packs/capability-pack-registry.yaml"
 # Minimum autoharness version this deployment script and its generated
 # artifacts require. Bumped whenever the script depends on a gate, schema, or
@@ -210,14 +210,14 @@ function Get-PackDetectionStatus([string]$PackName) {
     # Detection only: no install/upgrade/provisioning. Status is one of:
     #   present       -> command found AND `--version` produced parseable output
     #   undetectable  -> command found but `--version` produced no output
-    #   absent        -> command not found (and, for graphtor-docs, no
+    #   absent        -> command not found (and, for kbdb, no
     #                    workspace-local .graphtor/bin/ binary either)
     $cmd = Get-Command $PackName -ErrorAction SilentlyContinue
     $exePath = $null
     if ($cmd) { $exePath = $cmd.Source }
-    if (-not $exePath -and $PackName -eq "graphtor-docs") {
-        # graphtor-docs may be installed workspace-local at .graphtor/bin/ (registry eligibility signal), not just on PATH.
-        foreach ($candidate in @(".graphtor/bin/graphtor-docs.exe", ".graphtor/bin/graphtor-docs")) {
+    if (-not $exePath -and $PackName -eq "kbdb") {
+        # kbdb may be installed workspace-local at .graphtor/bin/ (registry eligibility signal), not just on PATH.
+        foreach ($candidate in @(".graphtor/bin/kbdb.exe", ".graphtor/bin/kbdb")) {
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { $exePath = $candidate; break }
         }
     }
@@ -276,7 +276,7 @@ function Invoke-Preflight {
     # missing MCP tools do not block scaffolding. Detection ALSO records version
     # (114.001-T / 47971057 bounded) for the pre-merge-install checklist phase.
     $script:PackDetections = @()
-    foreach ($mcp in @("backlogit", "engram", "graphtor-docs")) {
+    foreach ($mcp in @("backlogit", "engram", "kbdb")) {
         $detection = Get-PackDetectionStatus $mcp
         $script:PackDetections += $detection
         switch ($detection.Status) {
@@ -463,7 +463,7 @@ function Invoke-Scaffold([string]$HomePath) {
         }
     }
 
-    $autoharnessDir = Join-Path $WorkspaceRoot ".autoharness"
+    $autoharnessDir = Join-Path $WorkspaceRoot ".gsd"
     $configPath = Join-Path $autoharnessDir "config.yaml"
 
     $lines = @('schema_version: "1.0.0"', "preset: $Preset")
@@ -535,7 +535,7 @@ function Invoke-Verify {
         Write-Info "autoharness CLI not on PATH; skipping deterministic verify."
         return $true
     }
-    $manifest = Join-Path $WorkspaceRoot ".autoharness/harness-manifest.yaml"
+    $manifest = Join-Path $WorkspaceRoot ".gsd/harness-manifest.yaml"
     if (-not (Test-Path -LiteralPath $manifest)) {
         Write-Info "no harness manifest yet (composition not run); skipping deterministic verify."
         return $true
@@ -547,7 +547,7 @@ function Invoke-Verify {
     try {
         & $cli.Source verify-workspace --workspace $WorkspaceRoot
         if ($LASTEXITCODE -ne 0) { throw "verify-workspace exited $LASTEXITCODE" }
-        Write-Ok "verify-workspace completed (see .autoharness reports)"
+        Write-Ok "verify-workspace completed (see .gsd reports)"
         return $true
     } catch {
         Write-Fail "verify failed: $_"

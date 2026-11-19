@@ -25,7 +25,7 @@ func TestU177_004_ManifestPrePushChecksumReconciliation(t *testing.T) {
 	}
 
 	repoRoot := testRepoRoot(t)
-	data, err := os.ReadFile(filepath.Join(repoRoot, ".autoharness", "harness-manifest.yaml"))
+	data, err := os.ReadFile(filepath.Join(repoRoot, ".gsd", "harness-manifest.yaml"))
 	require.NoError(t, err)
 	require.NoError(t, yaml.Unmarshal(data, &manifest))
 

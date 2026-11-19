@@ -2,12 +2,8 @@ schema_version: "1.3.0"
 preset: full
 capability_packs:
   - backlogit
-  - strict-safety
   - agent-engram
-  - adversarial-review
-  - release-observability
-  - continuous-learning
-  - graphtor-docs
+  - kbdb
 backlog:
   tool: backlogit
   directory: .backlogit
@@ -101,10 +97,10 @@ model_routing:
     # reasoning_effort). Clearing either field falls back to Tier 2.
     model_provider: "google"
     model_family: "gemini-4-hydrogen"
-# Continuous-learning capability pack. Observations/instincts/learned artifacts
-# live under .autoharness/ alongside the rest of the harness-managed state.
+# Continuous-learning core protocol state lives alongside the rest of the
+# harness-managed state.
 continuous_learning:
-  directory: .autoharness/continuous-learning
+  directory: .gsd/continuous-learning
   # Hook capture stays off: this workspace has no installed capture adapter, and
   # the pack explicitly supports manual capture through review findings, closure
   # artifacts, and memory files instead.
@@ -114,11 +110,9 @@ continuous_learning:
   # .github/instructions/continuous-learning.instructions.md.
   promotion_threshold: 5
 
-# Graphtor-docs capability pack. Indexed local documentation retrieval via the
-# graphtor-docs MCP server. binary_path/embed_model_dir stay null so the binary
-# resolves from PATH then .graphtor/bin/, and the embedding model defaults to
-# .graphtor/models/all-MiniLM-L6-v2.
-graphtor_docs:
+# KBDB capability pack. The source registry remains on the existing legacy
+# data path until the operator explicitly migrates those databases.
+kbdb:
   sources_path: .graphtor/config/sources.yaml
-  binary_path: null
+  binary_path: .bin/kbdb.exe
   embed_model_dir: null

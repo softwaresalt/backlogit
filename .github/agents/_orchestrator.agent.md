@@ -2,7 +2,7 @@
 name: _Orchestrator
 description: "Coordinates the Stage → Ship pipeline for continuous iteration: routes stash intake through Stage and queued shipments through Ship, supporting sequential and pipelined execution"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, write, create, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
+tools: vscode, execute, read, agent, edit, search, todo, write, create, vscode/memory, backlogit/*, engram/*, kbdb/search_local_docs, kbdb/search_semantic, kbdb/research_topic, kbdb/traverse_doc_links, kbdb/list_sources, kbdb/get_chunk_by_id, kbdb/get_document, kbdb/get_status
 model_routing: "Tier 2 (Standard)"  # DEPRECATED — use model_tier
 model_tier: 2
 max_subagent_tier: 3
@@ -89,14 +89,14 @@ In addition to the pipeline agents (Stage and Ship), the Orchestrator can route 
 
 | Agent | Purpose | Trigger Phrases |
 |---|---|---|
-| **Auto-MergeInstall** | Discovers a target workspace's characteristics (tech stack, conventions, CI) and composes a customized agent harness from universal primitive templates. Orchestrates workspace-discovery and install-harness skills. | `install harness`, `set up harness`, `install autoharness`, `run mergeinstall`, `discover and install` |
+| **Auto-MergeInstall** | Discovers a target workspace's characteristics (tech stack, conventions, CI) and composes a customized agent harness from universal primitive templates. Orchestrates workspace-discovery and install-harness skills. | `install harness`, `set up harness`, `install gsd`, `run mergeinstall`, `discover and install` |
 | **Auto-Tune** | Detects drift between an installed agent harness and the current codebase state — new languages, changed build tools, shifted conventions — and proposes targeted updates to restore alignment. | `tune harness`, `check for drift`, `run auto-tune`, `update harness`, `harness maintenance` |
 
 ### Elective Agent Behavioral Notes
 
 * **Operator-initiated only**: The Orchestrator never invokes elective agents autonomously. The operator must explicitly request an install or tune operation.
 * **Not pipeline participants**: Elective agents do not participate in the Stage → Ship pipeline. They operate outside the stash/shipment lifecycle.
-* **Target workspace scoped**: Both agents operate against a target workspace (which may or may not be the autoharness repository itself). The operator specifies the target.
+* **Target workspace scoped**: Both agents operate against a target workspace (which may or may not be the gsd repository itself). The operator specifies the target.
 * **Branch safety**: Both agents enforce branch safety — they recommend feature branches for their output and never commit directly to the default branch.
 
 ## Environment Agnostic
@@ -293,7 +293,7 @@ Gather the full current backlog state:
    `backlogit_list_shipments` filtered to `queued`
    - If found: record as `queued_shipments`.
    - For each DAG-ready queued candidate (no unshipped `blocks`-type predecessor, per the re-check in Step 2 item 1), run
-     `autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
+     `gsd gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json`
      and show its gate verdict and token next to DAG readiness. A candidate is reported as **eligible** ONLY when BOTH hold: (a) DAG readiness passes, using the same criteria as the Step 2 item 1 re-check (no unshipped `blocks`-type predecessor and, when `DARK_MODE_ACTIVE`, it is the next entry in the P-017 `DARK_MODE_SCOPE` ordered cursor, not merely a scope member, and passes the P-017 scope filter); and (b) its pre_claim gate verdict passes (exit 0). A DAG-ready candidate that the pre_claim gate refuses (exit 1 `blocked` or exit 2 `invalid`, for example `PREDECESSOR_CLOSURE_INCOMPLETE`) is NOT eligible: list it under a separate `blocked by gate` heading with that refusal token. The gate verdict is shown beside every candidate, in either list. Step 0 eligibility is advisory and is not a claim; the `pipeline-topology` pre_claim gate that the Orchestrator itself invokes (Step 2 item 3) remains the authority, and Ship's separate claim-time gates are not part of this advisory check.
    - When the `pipeline-topology` gate is not installed in this workspace, say so, show the gate verdict as `not installed`, and do not invent a verdict. Report DAG readiness and scope as usual; eligibility then follows DAG readiness and scope alone, because Step 2 item 3's bootstrap exemption also skips the gate, and no candidate is listed under `blocked by gate` on that basis.
    - Eligibility reporting never claims a shipment and never invokes Ship.
@@ -327,7 +327,7 @@ When the `agent-intercom` capability pack is installed, broadcast the state summ
 **Skip if**: No stash entries remain.
 
 1. Confirm pipelined mode is safe (if a Ship shipment is active, verify it is on a different branch and its manifest will not be touched).
-2. **Resolve Stage's routed model (P-013.5, NON-NEGOTIABLE)**: **CLI-first**: run `autoharness routing resolve --workspace . --site stage --json`; when it runs, log `TOOL_OK: routing-resolver-cli` and declare the route it prints (exit `1` is not a failure: use the route and surface its `degraded` entries; exit `2` means the config is unresolved or invalid, so HALT this invocation, fail closed). Only when the `autoharness` executable is unavailable or the command cannot run, log `TOOL_DEGRADED: routing-resolver-cli` and resolve by the prose below. Before invoking Stage, resolve `config.model_routing.stage`, falling back per sub-field to `config.model_routing.tier3` when the `stage` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag (Core Rule 3): declare the resolved `model_family`/`model_provider`/`reasoning_effort`/`context_tier` as the invocation override when the runtime supports honoring a per-invocation model directive for the Stage subagent (`context_tier` resolves the same way per sub-field and is `default` when neither the role route nor `tier3` sets it). If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Stage invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Stage on the current session model without declaring the resolved route and the degradation. If the runtime cannot honor a non-`default` resolved `context_tier` for Stage, record `ROUTING_DEGRADED: context_tier` naming Stage and the resolved tier, and proceed at the default context without halting.
+2. **Resolve Stage's routed model (P-013.5, NON-NEGOTIABLE)**: **CLI-first**: run `gsd routing resolve --workspace . --site stage --json`; when it runs, log `TOOL_OK: routing-resolver-cli` and declare the route it prints (exit `1` is not a failure: use the route and surface its `degraded` entries; exit `2` means the config is unresolved or invalid, so HALT this invocation, fail closed). Only when the `gsd` executable is unavailable or the command cannot run, log `TOOL_DEGRADED: routing-resolver-cli` and resolve by the prose below. Before invoking Stage, resolve `config.model_routing.stage`, falling back per sub-field to `config.model_routing.tier3` when the `stage` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag (Core Rule 3): declare the resolved `model_family`/`model_provider`/`reasoning_effort`/`context_tier` as the invocation override when the runtime supports honoring a per-invocation model directive for the Stage subagent (`context_tier` resolves the same way per sub-field and is `default` when neither the role route nor `tier3` sets it). If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Stage invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Stage on the current session model without declaring the resolved route and the degradation. If the runtime cannot honor a non-`default` resolved `context_tier` for Stage, record `ROUTING_DEGRADED: context_tier` naming Stage and the resolved tier, and proceed at the default context without halting.
 3. Invoke the **Stage** subagent:
    * Pass the stash context, any operator-specified grouping preferences, and the resolved model-routing directive from step 2.
    * Stage's expected output: a `shipment_id` in `queued` status.
@@ -423,13 +423,13 @@ When the `agent-intercom` capability pack is installed, broadcast `[ORCHESTRATOR
 2. Enforce P-001/P-016: confirm no other top-level release unit is currently `Active` (unless pipelined mode is explicitly enabled), no previously merged shipment is still awaiting required post-merge release closure, and no prohibited parallel implementation branch/worktree exists before routing a shipment to Ship. Required post-merge context compaction (**P-020**) is part of that closure set: because a shipment is no longer `Active` after archival, read the previously merged shipment's **operational-closure artifact** in `docs/closure/` and route the next shipment only when its **compaction status** is `done` (or the non-blocking `degraded`); a `pending`, unset, or missing compaction status is an incomplete post-merge closure that blocks routing until compaction completes.
 3. **TOPOLOGY_GATE: pre_claim (route-to-Ship eligibility, before invocation)**: If the `pipeline-topology` gate is
    installed for this workspace, before invoking Ship in the next step, run
-   `autoharness gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`
+   `gsd gate pipeline-topology --mode agent --shipment {shipment_id} --phase pre_claim --json`
    against the selected shipment ID from step 1. Exit 0: proceed to step 4/5. Exit 1 (`blocked`) or exit 2
    (`invalid`): halt routing to Ship with the reported token/message rather than invoking Ship against an
    ineligible candidate — never inferred, never fail-open. Step 0 item 2 applies the same verdict: a candidate refused here is listed under its `blocked by gate` heading, never as eligible. (Bootstrap exemption: while
-   `autoharness gate pipeline-topology` is not yet installed in this workspace, skip this sub-step;
+   `gsd gate pipeline-topology` is not yet installed in this workspace, skip this sub-step;
    self-referential bootstrapping shipments that build the gate are not blocked by an as-yet-uninstalled gate.)
-4. **Resolve Ship's routed model (P-013.5, NON-NEGOTIABLE)**: **CLI-first**: run `autoharness routing resolve --workspace . --site ship --json`; when it runs, log `TOOL_OK: routing-resolver-cli` and declare the route it prints (exit `1` is not a failure: use the route and surface its `degraded` entries; exit `2` means the config is unresolved or invalid, so HALT this invocation, fail closed). Only when the `autoharness` executable is unavailable or the command cannot run, log `TOOL_DEGRADED: routing-resolver-cli` and resolve by the prose below. Before invoking Ship, resolve `config.model_routing.ship`, falling back per sub-field to `config.model_routing.tier2` when the `ship` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag (Core Rule 3): declare the resolved `model_family`/`model_provider`/`reasoning_effort`/`context_tier` as the invocation override when the runtime supports honoring a per-invocation model directive for the Ship subagent (`context_tier` resolves the same way per sub-field and is `default` when neither the role route nor `tier2` sets it). If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Ship invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Ship on the current session model without declaring the resolved route and the degradation. If the runtime cannot honor a non-`default` resolved `context_tier` for Ship, record `ROUTING_DEGRADED: context_tier` naming Ship and the resolved tier, and proceed at the default context without halting.
+4. **Resolve Ship's routed model (P-013.5, NON-NEGOTIABLE)**: **CLI-first**: run `gsd routing resolve --workspace . --site ship --json`; when it runs, log `TOOL_OK: routing-resolver-cli` and declare the route it prints (exit `1` is not a failure: use the route and surface its `degraded` entries; exit `2` means the config is unresolved or invalid, so HALT this invocation, fail closed). Only when the `gsd` executable is unavailable or the command cannot run, log `TOOL_DEGRADED: routing-resolver-cli` and resolve by the prose below. Before invoking Ship, resolve `config.model_routing.ship`, falling back per sub-field to `config.model_routing.tier2` when the `ship` route or an individual sub-field is absent or empty. This is intent-directive resolution, not a baked `--model` CLI flag (Core Rule 3): declare the resolved `model_family`/`model_provider`/`reasoning_effort`/`context_tier` as the invocation override when the runtime supports honoring a per-invocation model directive for the Ship subagent (`context_tier` resolves the same way per sub-field and is `default` when neither the role route nor `tier2` sets it). If the runtime cannot honor a per-invocation override, emit `ROUTING_DEGRADED: Ship invocation could not honor resolved route {model_family}/{model_provider} — falling back to session default` and surface it to the operator — never silently invoke Ship on the current session model without declaring the resolved route and the degradation. If the runtime cannot honor a non-`default` resolved `context_tier` for Ship, record `ROUTING_DEGRADED: context_tier` naming Ship and the resolved tier, and proceed at the default context without halting.
 5. Invoke the **Ship** subagent:
    * Run the Served-Root Handoff Procedure. Invoke Ship only after the Served-Root
      Handoff Procedure passes, with `served_workspace_root`, `served_storage_root`, and
@@ -539,7 +539,7 @@ After each Stage or Ship cycle, re-assess state (return to Step 0):
 * **Advance the multi-shipment cursor (dark run)**: after a Ship handoff completes and its shipment is merged and closed, and after that shipment's P-020 post-merge closure completes, **reload current `main` agent instructions** — re-read the freshly merged Orchestrator and Ship agent definitions — before advancing the cursor or selecting the next successor shipment. Then update the `DARK_MODE_SCOPE` cursor: set the last completed shipment to the just-shipped ID, set the next shipment to the following entry in the recorded order, and **re-emit `DARK_MODE_SCOPE`** before returning to Step 2. Successors stay `queued` from the start and become eligible automatically when their predecessor ships and closure gates clear; no shipment-status un-gating transition is performed or required. A never-advanced cursor would re-select the completed shipment or strand the sequence.
 * **TOPOLOGY_GATE: pre_claim (cursor-advance eligibility check)**: If the `pipeline-topology` gate is installed for
   this workspace, immediately after advancing the `DARK_MODE_SCOPE` cursor above and before returning to Step 2, run
-  `autoharness gate pipeline-topology --mode agent --shipment {next_shipment_id} --phase pre_claim --json` against
+  `gsd gate pipeline-topology --mode agent --shipment {next_shipment_id} --phase pre_claim --json` against
   the newly-designated next-in-cursor shipment ID. Exit 0: proceed to Step 2. Exit 1/2: halt the cursor advance with
   the reported token/message rather than re-entering Step 2 against an ineligible successor. (Bootstrap exemption
   applies identically to the route-to-Ship check in Step 2.)
@@ -609,7 +609,7 @@ Use `transmit` when a Stage or Ship failure requires operator intervention befor
 
 This agent operates at **Tier 2 (Standard)** by default, but supports an independent model override via `config.model_routing.orchestrator`. When the override is set, the orchestrator runs on the specified model regardless of the tier2 default.
 
-**Current routing** (resolved from this workspace's `.autoharness/config.yaml`; re-read at session start rather than trusting this table):
+**Current routing** (resolved from this workspace's `.gsd/config.yaml`; re-read at session start rather than trusting this table):
 
 | Agent | Tier | Resolved Model Family |
 |---|---|---|
@@ -621,7 +621,7 @@ This agent operates at **Tier 2 (Standard)** by default, but supports an indepen
 
 **Cross-provider routing**: The orchestrator and Ship can run on one provider (Anthropic in this workspace) while Stage routes to another (Google `gemini-4-argon`). This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes both providers.
 
-**Configuration example** (in `.autoharness/config.yaml`):
+**Configuration example** (in `.gsd/config.yaml`):
 
 ```yaml
 model_routing:
@@ -677,7 +677,7 @@ an installed agent definition's frontmatter `model_family`/`model_provider`/
 still-authoritative for a *new* session. At the start of every new session,
 before any P-013.5 invocation-time resolution above is performed:
 
-1. **Re-read fresh**: read `.autoharness/config.yaml` directly from disk. Never
+1. **Re-read fresh**: read `.gsd/config.yaml` directly from disk. Never
    reuse a value carried over in conversation context from a previous session,
    and never treat the frontmatter `model_family`/`model_provider`/
    `reasoning_effort`/`context_tier` baked into `.github/agents/*.agent.md` as the live source
@@ -690,11 +690,11 @@ before any P-013.5 invocation-time resolution above is performed:
    document, or omits `schema_version`, treat reload as INVALID and go straight
    to step 3 — do not proceed to route resolution. Only once the precheck
    passes, validate the config against the harness-config schema before
-   resolving any role or escalation route from it. Resolve `autoharness_home`
-   via the same order used elsewhere (`AUTOHARNESS_HOME` env var → `autoharness
+   resolving any role or escalation route from it. Resolve `gsd_home`
+   via the same order used elsewhere (`AUTOHARNESS_HOME` env var → `gsd
    home` CLI → the directory containing this agent definition, traversed up →
-   the default global autoharness installation directory), then run the globally installed CLI:
-   `autoharness verify-workspace --workspace {workspace_path} --autoharness-home {autoharness_home} --json`
+   the default global gsd installation directory), then run the globally installed CLI:
+   `gsd verify-workspace --workspace {workspace_path} --gsd-home {gsd_home} --json`
    and inspect the harness-config schema result (`strict_schema_blockers` for
    the `config` contract) for anything beyond the two precheck conditions above.
 3. **Fail-closed halt — no stale/baked routes (H6)**: if the precheck in step 2
@@ -733,4 +733,4 @@ Maximum 3 hops. The depth rules apply uniformly to both pipeline and elective ag
 
 Elective agents follow the same depth budget as pipeline agents. Auto-MergeInstall (depth 1) invokes workspace-discovery and install-harness skills (depth 2). Auto-Tune (depth 1) invokes workspace-discovery, tune-harness, and verify-harness skills (depth 2), and verify-harness may dispatch reviewer subagents (depth 3).
 
-Generated by autoharness | Template: orchestrator.agent.md.tmpl
+Generated by gsd | Template: orchestrator.agent.md.tmpl

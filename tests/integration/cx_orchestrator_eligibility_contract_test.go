@@ -22,7 +22,7 @@ func TestUCXS3_OrchestratorGateAwareEligibility(t *testing.T) {
 	require.Equal(t, 1, strings.Count(orchestrator, end), "Step 1 end anchor must be unique")
 	step0 := orchestrator[strings.Index(orchestrator, start):strings.Index(orchestrator, end)]
 
-	assert.Contains(t, step0, "autoharness gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json",
+	assert.Contains(t, step0, "gsd gate pipeline-topology --mode agent --shipment {id} --phase pre_claim --json",
 		"Orchestrator Step 0 must run the pre_claim pipeline-topology gate for each DAG-ready candidate")
 	assert.Contains(t, step0, "gate verdict",
 		"Orchestrator Step 0 eligibility reporting must show the gate verdict")

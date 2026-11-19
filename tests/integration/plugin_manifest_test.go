@@ -239,8 +239,8 @@ func TestPluginManifestHasNoLegacyDriftCopies(t *testing.T) {
 func TestActivePluginDocsDoNotReferenceRetiredNPMWrapper(t *testing.T) {
 	repoRoot := testRepoRoot(t)
 	activePaths := []string{
-		".autoharness/backlog-registry.yaml",
-		".autoharness/harness-manifest.yaml",
+		".gsd/backlog-registry.yaml",
+		".gsd/harness-manifest.yaml",
 		".github/workflows/ci.yml",
 		".github/workflows/release.yml",
 		".gitignore",

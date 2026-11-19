@@ -2,7 +2,7 @@ package cli
 
 // U2 (078.002-T): CLI/MCP registry drift-detection test.
 //
-// This guards `.autoharness/backlog-registry.yaml` (the operation map that is the
+// This guards `.gsd/backlog-registry.yaml` (the operation map that is the
 // single source of truth for the MCP->CLI fallback pairing) against drifting from
 // the live surfaces. Enumeration is driven from the authoritative MCP tool set
 // (mcp.Server.ListTools) and the real CLI command paths (core.DescribeCLICommands),
@@ -44,7 +44,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/models"
 )
 
-// registryOperation is a single entry in the .autoharness operation map. Only the
+// registryOperation is a single entry in the .gsd operation map. Only the
 // fields relevant to drift detection are decoded.
 type registryOperation struct {
 	MCPTool      string               `yaml:"mcp_tool"`
@@ -63,7 +63,7 @@ type registryCLIFallback struct {
 	Rationale        string          `yaml:"rationale"`
 }
 
-// registryFile is the top-level shape of .autoharness/backlog-registry.yaml.
+// registryFile is the top-level shape of .gsd/backlog-registry.yaml.
 type registryFile struct {
 	Operations map[string]registryOperation `yaml:"operations"`
 }
@@ -118,7 +118,7 @@ func resolveCLIPath(cliCommand string) string {
 }
 
 // findRegistryPath walks up from the test's working directory to the repo root
-// (identified by a go.mod marker) and returns the .autoharness registry path.
+// (identified by a go.mod marker) and returns the .gsd registry path.
 // Fails loudly if the root marker or the registry file cannot be found.
 func findRegistryPath(t *testing.T) string {
 	t.Helper()
@@ -126,7 +126,7 @@ func findRegistryPath(t *testing.T) string {
 	require.NoError(t, err)
 	for {
 		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
-			regPath := filepath.Join(dir, ".autoharness", "backlog-registry.yaml")
+			regPath := filepath.Join(dir, ".gsd", "backlog-registry.yaml")
 			_, regErr := os.Stat(regPath)
 			require.NoErrorf(t, regErr, "registry not found at repo root %s", dir)
 			return regPath

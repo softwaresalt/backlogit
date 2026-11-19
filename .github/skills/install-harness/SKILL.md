@@ -1,0 +1,1890 @@
+---
+name: install-harness
+description: "Multi-phase installation workflow that composes harness primitives from templates into a target workspace based on its discovered profile"
+---
+
+# Install Harness
+
+Compose and install a complete agent harness into a target workspace. Uses the workspace profile from the workspace-discovery skill to customize universal templates for the target environment's specific technology stack, conventions, and workflow requirements.
+
+GSD operates from the target workspace's own root `.bin/` directory. Templates
+and schemas are read from that workspace-local bundle (or a trusted development
+source checkout) without extracting an engine tree. Generated harness
+artifacts, tool executables, configuration, and mutable state are owned by the
+same workspace. `GSD_HOME`, `gsd home`, and user-home lookup are legacy
+compatibility behavior, not normal discovery.
+
+In this document, command examples shown as `gsd <subcommand>` are semantic
+CLI examples. When executing them in a normal workspace, invoke the owned
+executable explicitly (`./.bin/gsd` or `.\.bin\gsd.exe`).
+
+## When to Use
+
+Invoke this skill after workspace-discovery has produced a profile, or let the Auto-MergeInstall agent invoke it automatically. The skill handles template selection, variable substitution, artifact generation, and installation verification.
+
+## Inputs
+
+* `gsd_home`: (Required) Workspace-local source of templates and schemas.
+  Prefer `{workspace_path}/.bin` or its versioned `gsd-assets*.zip`. A trusted
+  source checkout is valid for GSD development. Existing explicit `GSD_HOME`,
+  `gsd home`, `.gsd/`, and user-home resolution remain compatibility paths and
+  fail closed on invalid runtime manifests or recovery state.
+* `workspace_path`: (Required) Absolute path to the target workspace root. For
+  normal consumers, `gsd_home` is inside this root (under `.bin/`). Source-tree
+  self-install rules remain a special GSD-development case.
+* `profile_path`: (Required) Path to workspace profile YAML (typically `{workspace_path}/.gsd/workspace-profile.yaml`).
+* `preset`: (Optional, default `standard`) One of `starter`, `standard`, or `full`. Presets define the default primitive set and capability-pack defaults.
+* `primitives`: (Optional) Comma-separated list of primitive numbers (1-10) to install. Defaults to the selected preset.
+* `capability_packs`: (Optional) Comma-separated list of external-tool capability packs: `agent-engram`, `backlogit`, `kbdb` (the legacy name `graphtor-docs` is accepted as an alias for `kbdb`, logs `LEGACY_PACK_ALIAS`, and is normalized to `kbdb`). The former internal packs (`browser-verification`, `continuous-learning`, `strict-safety`, `release-observability`, `adversarial-review`) are part of the core harness install set and are not capability packs; see Folded Core Packs below.
+* `dry_run`: (Optional, default false) When true, generate artifacts to a staging directory without installing.
+
+## Output
+
+* Harness artifacts installed in target workspace's `.github/` directory
+* Backlog structure initialized in `.backlog/`
+* `AGENTS.md` created at workspace root
+* Installation manifest at `.gsd/harness-manifest.yaml`
+
+## Required Protocol
+
+### Phase 1: Profile Loading and Validation
+
+#### Step 1.0: Validate gsd Home
+
+Verify the `gsd_home` bundle or directory contains the expected structure without unpacking `gsd-assets.zip`:
+
+* When `gsd_home` is `gsd-assets.zip` (or a directory containing `gsd-assets.zip`), run `gsd bundle list --gsd-home {gsd_home}` and read entries directly via `gsd bundle read <entry-path> --gsd-home {gsd_home}` (for example `gsd bundle read templates/AGENTS.md.tmpl --gsd-home {gsd_home}`) — **never unpack `gsd-assets.zip` to disk**.
+* Verify that the bundle contains:
+  * `templates/` — template files
+  * `schemas/` — JSON schemas for validation
+  * `templates/backlog/registries/` — pre-built backlog tool registries
+
+If any are missing, halt and report the issue. The gsd installation may be corrupt or incomplete.
+
+Enforce containment: the resolved `gsd_home` is allowed when it is
+workspace-local (normally `.bin/`) or is the explicitly selected trusted GSD
+source checkout. Never traverse or write into a user-home installation during
+the normal path. Preserve the separate self-install handling for the GSD
+source repository.
+
+All template reads in subsequent phases read from `templates/...` via `gsd bundle read <entry-path> --gsd-home {gsd_home}` (or direct file reads when `gsd_home` is an unpacked source checkout). All artifact writes use `{workspace_path}` as the base path.
+
+**First-install snapshot**: at install start, before Step 1.2 and therefore before Step 3.3 creates the manifest, record `first_install = not exists(.gsd/harness-manifest.yaml)` for the target workspace. Every later step (including the Step 1.2 fresh-install Ship seed) reads this snapshot and must never re-probe the manifest.
+
+#### Step 1.0c: Enforce Branch Safety for Install Output
+
+If `workspace_path` is a Git repository, determine the current branch and the
+repository's default branch before producing any follow-up guidance that
+mentions committing or pushing the generated install output.
+
+* Never commit or push gsd install output directly to the default
+   branch (`main`, `master`, `trunk`, or the detected remote default branch).
+* If the current branch is the default branch, explicitly recommend creating or
+   switching to a feature branch first, for example
+   `chore/gsd-install-<date>`.
+* Treat the intended Git workflow as: generate install output on a feature
+   branch, review the diff, and open a pull request.
+* If the operator declines to create or switch branches, installation may still
+   proceed as local uncommitted changes, but do NOT commit or push those changes
+   from this workflow.
+
+#### Step 1.0b: Load Operator Configuration
+
+Check for `.gsd/config.yaml` in the target workspace. If present:
+
+1. Validate the config against the schema version that matches the document's own `schema_version`, not against the root schema alone:
+   * Read `schema_version` from the document. When `{gsd_home}/schemas/harness-config/<schema_version>.schema.json` exists, validate against that mirror (the selection `resolve_contract_schema_path` makes).
+   * When `schema_version` is absent, unknown to the contract, or has no mirror file, validate against the current mirror and report the version as a contract finding instead of declaring the file invalid on the root alone.
+   * The root `schemas/harness-config.schema.json` tracks only the current version, so it is not the validation target for an older-version config.
+2. Extract operator preferences for: preset, primary stack pack, stack packs, install layers, capability packs, backlog configuration (tool, directory, suffix map), docs directory structure, model routing, and template variable overrides
+3. Merge with the workspace profile — operator config values take precedence over auto-detected profile values
+4. Derive `{{SUFFIX_*}}` template variables from `backlog.suffix_map` (falling back to backlogit project YAML when backlogit pack is active, then schema defaults)
+5. Derive `{{DOCS_ROOT}}` and `{{DOCS_*}}` template variables from `docs.root` and `docs.subdirectories` (falling back to schema defaults)
+6. Derive `{{PRIMARY_STACK_PACK}}`, `{{STACK_PACKS_YAML}}`, `{{INSTALL_LAYERS_YAML}}`, and `{{CAPABILITY_PACKS_YAML}}` from the merged composition state for config write-back
+7. If the config specifies `overrides`, apply those template variable values directly, overriding any profile-derived values
+
+**Catalog and bindings (`model_routing.routes` / `model_routing.bindings`).** Read these from the loaded workspace config at runtime; this guidance adds no install-time placeholder and no template variable. For an agent that has a binding, the four route variables of that artifact (the `TIER_<N>_FAMILY`, `TIER_<N>_PROVIDER`, `TIER_<N>_REASONING_EFFORT`, and `TIER_<N>_CONTEXT_TIER` set of the tier its template renders) come from the shared site composition (`composeArtifactVariables` / `deriveRouteFamilyVariables` in `internal/verifyworkspace/verify.go`): the binding's route first, then explicit `config.overrides` values for those same variables. The template default tier is never consulted for a bound agent, so a field the bound route leaves empty is not inherited from the agent's old tier. An unbound agent renders its template default tier as before, and pipeline artifacts are unchanged. A binding on a managed agent whose template default tier cannot be established is rejected by verification (`ROUTING_BINDING_UNRESOLVED_SITE`) rather than guessed or skipped.
+
+If the file does not exist, proceed with profile-only installation using schema default values for all suffix and docs variables. After installation, the installer writes the resolved `.gsd/config.yaml` recording the actual values used (see Step 3.4).
+
+#### Step 1.1: Load Profile
+
+Read the workspace profile from `profile_path`. Validate against the workspace profile schema. If validation fails, halt and report the specific schema violations.
+
+#### Step 1.1b: Evaluate Self-Install Mode (if flagged)
+
+If `workspace_path` equals `gsd_home` (flagged in Step 1.0), check the now-loaded profile:
+
+* If `distribution.is_global_tool` is `true`, enter self-install mode:
+  1. **Agent routing**: Generate workflow agents (stage, ship) and write them to `distribution.local_agents_dir` (default `.github/local-agents`) instead of `.github/agents/`. Template agents, global skills, instructions, policies, and prompts continue to use their standard locations under `.github/`.
+  2. **Packaging isolation check**: Verify that `distribution.local_agents_dir` is NOT referenced in `go.mod` or bundle packaging roots (`internal/bundle/bundle.go` `BundledRoots`). If it is, halt and report the violation — workflow agents must not leak into the distribution package.
+  3. **Operator confirmation required**: Before proceeding, display: "Self-install mode: target is the gsd installation itself. Workflow agents will be placed in `{distribution.local_agents_dir}` to avoid wheel leakage. Confirm?" Do not proceed until the operator confirms.
+  4. In self-install mode, workflow agent writes use `{workspace_path}/{distribution.local_agents_dir}` instead of `{workspace_path}/.github/agents/`.
+* If `distribution.is_global_tool` is absent or `false`, halt and report: "Target workspace is the gsd installation itself and is not configured as a globally-distributed tool. Select a different target workspace."
+
+#### Step 1.2: Compute Template Variables
+
+**Fresh-install Ship seed (H-C3)**: apply this rule first in Step 1.2, before any `{{SHIP_*}}` variable is derived. It is an install-flow rule, not a variable-table default.
+
+* **Trigger**: the Step 1.0 `first_install` snapshot is true, **and** the operator-supplied input has no `model_routing.ship` key at all (a missing `.gsd/config.yaml`, or a config without a `ship` key), **and** `config.overrides` sets none of `SHIP_FAMILY`, `SHIP_PROVIDER`, `SHIP_REASONING_EFFORT`, or `SHIP_CONTEXT_TIER`.
+* A `SHIP_*` template-variable override is an operator Ship choice: it suppresses the seed entirely and is applied by Step 1.0b item 7 as usual.
+* An explicitly present `ship` block is an operator choice and is honored as written, even when all its fields are empty: it resolves through the normal Ship → Tier 2 fallback and no seed value is mixed in.
+* **Action**: when the trigger holds, set the in-memory route to exactly these four values, then derive `{{SHIP_*}}` from it and report the seed in the Step 4.6 installation summary:
+
+```yaml
+model_routing:
+  ship:
+    model_provider: openai
+    model_family: gpt-6-luna
+    reasoning_effort: xhigh
+    context_tier: long_context
+```
+
+Step 3.4 then writes the seeded route back to `.gsd/config.yaml`, so every later install, verify, and tune reads an explicit Ship route and the seed is never re-applied. The seed values live in this skill only: no template carries them as literals and the Go variable derivation (`internal/verifyworkspace/verify.go`) has no seed constant.
+
+Derive all template variables from the profile. The variable resolution table defines how profile fields map to template placeholders:
+
+| Template Variable | Source | Example (Rust) | Example (TypeScript) | Example (Python) |
+|---|---|---|---|---|
+| `{{PROJECT_NAME}}` | Directory name of workspace | `my-service` | `my-app` | `my-api` |
+| `{{HARNESS_ENFORCED_SUMMARY}}` | **Synthesize ONLY from enforcement artifacts the composition actually installs** — emit a bullet for a concern solely when its enforcing artifact is present: formatting/linting (a linter or markdownlint config), commit/branch and merge-commit hygiene (`git-merge` / `pull-request` / `github-pr-automation` instructions and P-009), test-first red-green gates (the TDD policies P-002/P-004 plus a test harness), backlog bookkeeping (a backlog tool registry), role-boundary checks (the two-agent Stage/Ship model). **Never assert a concern the composition does not enforce** — doing so would tell code review to de-prioritize real, unenforced defects. When NO enforcement artifact is confirmed, resolve to the single explicit de-prioritize-nothing bullet in the last column so review flags every concern. Used only by `copilot-code-review.instructions.md`; never leave unresolved. | `* Formatting and linting`<br>`* Commit/branch mechanics`<br>`* Test-first red-green gates`<br>`* Merge/PR hygiene`<br>`* Backlog bookkeeping` _(include only the subset whose artifacts are installed; if none, use `* None — this composition enforces no mechanical gates deterministically; do not de-prioritize anything, report every concern.`)_ | (same, subset-gated) | (same, subset-gated) |
+| `{{WORKSPACE_ROOT}}` | `profile.workspace_path` (absolute path to workspace root) | `/home/me/my-service` | `C:\Source\my-app` | `/srv/my-api` |
+| `{{PRIMARY_LANGUAGE}}` | `languages.primary` | `Rust` | `TypeScript` | `Python` |
+| `{{PRIMARY_LANGUAGE_LOWER}}` | `lowercase(languages.primary)` | `rust` | `typescript` | `python` |
+| `{{LANGUAGE_VERSION}}` | `languages.version` (detected from toolchain config) | `2024` | `ES2022` | `3.12` |
+| `{{LANGUAGE_NOTES}}` | Synthesized from language profile (key version/edition note) | `(Rust 2024 edition)` | `(strict mode)` | `(requires 3.12+)` |
+| `{{BUILD_COMMAND}}` | `build.command` | `cargo build` | `npm run build` | `python -m build` |
+| `{{TEST_COMMAND}}` | `test.command` | `cargo test` | `npm test` | `pytest` |
+| `{{LINT_COMMAND}}` | `lint.command` | `cargo clippy -- -D warnings` | `npm run lint` | `ruff check .` |
+| `{{FORMAT_COMMAND}}` | `format.command` | `cargo fmt --all -- --check` | `npx prettier --check .` | `ruff format --check .` |
+| `{{FORMAT_FIX_COMMAND}}` | Derived from format tool | `cargo fmt --all` | `npx prettier --write .` | `ruff format .` |
+| `{{BUILD_CHECK_COMMAND}}` | `build.check_command` (fast compilation check, no test) | `cargo check --all-targets` | `tsc --noEmit` | `python -m py_compile $(find src -name "*.py")` |
+| `{{FORMAT_CHECK_COMMAND}}` | `format.check_command` (read-only format gate) | `cargo fmt --all -- --check` | `npx prettier --check .` | `ruff format --check .` |
+| `{{TEST_DIR}}` | `test.directory` | `tests/` | `__tests__/` | `tests/` |
+| `{{SOURCE_DIR}}` | `structure.source_layout` | `src/` | `src/` | `src/` |
+| `{{CI_PLATFORM}}` | `ci.platform` | `GitHub Actions` | `GitHub Actions` | `GitHub Actions` |
+| `{{CI_WORKFLOW_GLOB}}` | Derived from `ci.platform` | `**/.github/workflows/*.yml` | `**/.github/workflows/*.yml` | `**/.github/workflows/*.yml` |
+| `{{REPO_OWNER}}` | Parsed from git remote URL (`owner/repo`) | `my-org` | `my-org` | `my-org` |
+| `{{REPO_NAME}}` | Parsed from git remote URL (`owner/repo`) | `my-service` | `my-app` | `my-api` |
+| `{{BUILD_TOOL}}` | `build.tool` | `cargo` | `npm` | `pip` |
+| `{{FORMATTER}}` | `format.tool` | `rustfmt` | `prettier` | `ruff` |
+| `{{LINTER}}` | `lint.tool` | `clippy` | `eslint` | `ruff` |
+| `{{TEST_RUNNER}}` | `test.runner` | `cargo test` | `jest` | `pytest` |
+| `{{UNSAFE_POLICY}}` | Language-specific safety rules | `#![forbid(unsafe_code)]` | `strict TypeScript` | `type hints required` |
+| `{{ERROR_PATTERN}}` | Language-specific error handling | `Result<T, Error>` | `try/catch + custom errors` | `raise/except` |
+| `{{DOC_COMMENT_STYLE}}` | Language convention | `/// doc comment` | `/** JSDoc */` | `"""docstring"""` |
+| `{{LANGUAGE_FILE_GLOB}}` | Language convention | `**/*.rs` | `**/*.ts,**/*.tsx` | `**/*.py` |
+| `{{UNIMPLEMENTED_MARKER}}` | Language convention | `unimplemented!("Worker: ...")` | `throw new Error("Not implemented: ...")` | `panic("not implemented")` |
+| `{{MCP_SDK}}` | `frameworks.mcp_sdk` (when detected) | _(N/A)_ | `@modelcontextprotocol/sdk` | `mcp` |
+| `{{MCP_TRANSPORT}}` | `frameworks.mcp_transport` (when detected) | _(N/A)_ | `stdio` | `stdio` |
+| `{{MCP_PROJECT_STRUCTURE}}` | Derived from language and project layout | _(N/A)_ | _(project tree)_ | _(project tree)_ |
+| `{{REPOSITORY_OPERATING_MODEL}}` | Derived from workspace architecture | _(brief description)_ | _(brief description)_ | _(brief description)_ |
+| `{{QUALITY_GATE_1_NAME}}` | `ci.quality_gates[0]` (name) | `check` | `lint` | `lint` |
+| `{{QUALITY_GATE_1}}` | `ci.quality_gates[0]` (command) | `cargo check --all-targets` | `npm run lint` | `ruff check .` |
+| `{{QUALITY_GATE_2_NAME}}` | `ci.quality_gates[1]` (name) | `clippy` | `typecheck` | `typecheck` |
+| `{{QUALITY_GATE_2}}` | `ci.quality_gates[1]` (command) | `cargo clippy -- -D warnings` | `tsc --noEmit` | `mypy src/` |
+| `{{QUALITY_GATE_3_NAME}}` | `ci.quality_gates[2]` (name) | `fmt` | `test` | `test` |
+| `{{QUALITY_GATE_3}}` | `ci.quality_gates[2]` (command) | `cargo fmt --all -- --check` | `npm test` | `pytest` |
+| `{{QUALITY_GATE_4_NAME}}` | `ci.quality_gates[3]` (name, optional) | `test` | _(empty)_ | _(empty)_ |
+| `{{QUALITY_GATE_4}}` | `ci.quality_gates[3]` (command, optional) | `cargo test` | _(empty)_ | _(empty)_ |
+| `{{POLL_INTERVAL}}` | `ci.poll_interval` (seconds, optional) | `30` | `30` | `30` |
+| `{{MAX_WAIT}}` | `ci.max_wait` (seconds, optional) | `600` | `600` | `600` |
+| `{{TYPECHECK_COMMAND}}` | `typecheck.command` (read-only type gate; empty when none configured) | _(empty)_ | `tsc --noEmit` | `mypy src/` |
+| `{{LINT_TOOL}}` | `lint.tool` (binary the pre-push hook probes for the Lint gate; empty falls back to the command's leading token) | `cargo` | `npm` | `ruff` |
+| `{{FORMAT_TOOL}}` | `format.tool` (probe binary for the Format gate) | `cargo` | `npx` | `ruff` |
+| `{{TYPECHECK_TOOL}}` | `typecheck.tool` (probe binary for the Typecheck gate; e.g. the real tool behind a `python -m` wrapper) | _(empty)_ | `tsc` | `mypy` |
+| `{{TEST_TOOL}}` | `test.runner` (probe binary for the Test gate) | `cargo` | `npm` | `pytest` |
+| `{{BUILD_TOOL}}` | `build.tool` (probe binary for the Build gate) | `cargo` | `tsc` | `python` |
+| `{{CI_REQUIRED_CHECK_NAME}}` | `ci.required_check_name` (the aggregation-gate check context `name:`; may contain spaces. The job ID is always the fixed slug `ci-gate`) | `ci gate` | `ci gate` | `build` |
+| `{{CI_EXPENSIVE_JOB_NAME}}` | Synthesized from the primary ecosystem's heavy job (the expensive job's check context `name:`; job ID is always the fixed slug `expensive`) | `build` | `test` | `test` |
+| `{{CI_PATH_FILTER_MODE}}` | `ci.path_filter_mode` (only `fail_closed_changes_job` is supported; the always-running `changes` job is fail-closed) | `fail_closed_changes_job` | `fail_closed_changes_job` | `fail_closed_changes_job` |
+| `{{CI_DOCS_ONLY_PATHS}}` | `ci.docs_only_paths` (directory-scoped denylist negations for the fail-closed changes job; avoid an extension-wide `!**/*.md` when Markdown is executable product) | `'!docs/**'` | `'!docs/**'` | `'!docs/**', '!.backlogit/**', '!.gsd/**'` |
+| `{{CI_RUNNER_OS}}` | `ubuntu-latest` (regular CI is Linux-only per `ci.linux_only`; cross-OS lives in release-tag workflows) | `ubuntu-latest` | `ubuntu-latest` | `ubuntu-latest` |
+| `{{CI_DEFAULT_BRANCH}}` | The target workspace's actual default branch name, used for the `on: push:`/`on: pull_request:` trigger filters in `templates/ci/ci.yml.tmpl` (109.014-T / Gate C follow-up: those triggers must not hard-code `main`, or the workflow never starts at all for a `master`/`trunk`-default repo, making the CI backstop non-functional regardless of `resolveDefaultBranch` in `internal/verifyworkspace/verify.go`). Resolve deterministically: prefer `git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null` (strip the `origin/` prefix) or, when a `gh`-authenticated remote is available, `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`. **Never guess `main` when both resolution methods fail** (Copilot review finding on PR #302, thread PRRT_kwDORzpWpM6W0M_t): silently defaulting to `main` for a `master`/`trunk`-default repo whose default branch genuinely could not be resolved would install a workflow that never triggers on that repo's actual default branch at all — a strictly worse, silent, total disablement of the CI backstop (and every other CI job in the file), not merely a missed edge case. Instead, when neither method resolves a name, **halt installation** and prompt the operator to supply the actual default branch explicitly (e.g. re-run with network/`gh` auth available, or provide the value directly) rather than proceeding with an unresolved/guessed value. | `main` | `main` | `main` |
+| `{{CI_SETUP_STEPS}}` | Per-ecosystem toolchain setup steps (checkout + SDK + dependency install) | _(cargo/rust setup)_ | _(node setup)_ | _(python + uv setup)_ |
+| `{{CI_GSD_INSTALL_COMMAND}}` | The `topology-check` job's own GSD materialization step (109.014-T / Gate C). Ordinary consuming workspaces must place the pinned `gsd` executable and asset bundle in the checkout's `.bin/` directory and invoke that path; a package-manager/global install is compatibility-only. Resolve a local source build for the self-hosting exception where `go.mod` identifies `github.com/softwaresalt/GSD`. Never leave the placeholder unresolved. | materialize verified GSD release into `.bin/` | materialize verified GSD release into `.bin/` | `go build -o ./.bin/gsd.exe ./cmd/gsd` (self-hosting dogfood exception; build the bundle separately) or workspace-local consumer materialization |
+| `{{PRE_PUSH_ENABLED}}` | `local_gating.pre_push_enabled` (whether the pre-push hook artifact is generated; hook stays opt-in) | `true` | `true` | `true` |
+| `{{PRE_PUSH_GATES}}` | `local_gating.pre_push_gates` (ordered gate list the hook runs) | `test, lint, format, build` | `test, lint, format, typecheck` | `test` |
+
+> **Probe-tool resolution (`{{*_TOOL}}`).** Set each `{{*_TOOL}}` to the binary
+> whose **absence should skip** the gate (warn-and-skip, P-019) — not necessarily
+> the first token of the command. For commands that invoke a **project-local** tool
+> through a wrapper (`npm run lint`, `npx prettier`, `npx tsc`), use the wrapper
+> entry point (`npm` / `npx`): the underlying tool resolves from
+> `node_modules/.bin` and is **not** on `PATH`, so probing it directly via
+> `command -v` / `Get-Command` would wrongly skip a working gate. For
+> `python -m <tool>` use the underlying tool when it installs a `PATH` console
+> script (e.g. `mypy`, `ruff`), otherwise `python`. Keep the example values above
+> consistent with each gate's command column. When `{{*_TOOL}}` is empty the hook
+> falls back to the command's leading real token (env prefixes skipped).
+>
+> **Required-gate carve-out (P-019).** The skip-on-absence rule above applies to
+> the discovered `run_gate` / `Invoke-Gate` gates only. The hook templates also
+> emit one **required** gate, markdownlint (`run_required_gate` /
+> `Invoke-RequiredGate`), whose absent tool is a **failure** naming the install
+> command (`npm install -g markdownlint-cli@0.49.1`) and the
+> `git push --no-verify` escape. Do not rewrite the required gate to
+> warn-and-skip, and do not add other gates to the required set: markdownlint is
+> the first and only required gate. Its file set follows the shared scope S1
+> (changed Markdown files versus the merge-base with the default branch,
+> `.markdownlint.json`, one pinned markdownlint-cli version) so local hooks and CI
+> agree.
+
+> **Hook gate composition (`{{PRE_PUSH_GATES}}`).** The pre-push hook templates
+> ship the full gate menu (Lint / Format / Typecheck / Test / Build call sites).
+> During resolution, emit **only** the `run_gate` / `Invoke-Gate` calls named in
+> `local_gating.pre_push_gates`, in that list's order, and drop the rest — do not
+> emit a fixed five-gate order. A profile such as `pre_push_gates: [test]` must
+> produce a hook that runs the Test gate only. (A call whose command variable also
+> resolves empty is likewise omitted.)
+
+> **CI gates are independent of the local hook.** The remote expensive-job steps
+> are composed from the discovered CI gate command fields
+> (`{{LINT_COMMAND}}` / `{{FORMAT_CHECK_COMMAND}}` / `{{TYPECHECK_COMMAND}}` /
+> `{{TEST_COMMAND}}` / `{{BUILD_CHECK_COMMAND}}`), **not** from
+> `local_gating.pre_push_gates`. `pre_push_gates` governs the opt-in local hook
+> only; narrowing local gates (e.g. skipping a slow gate locally) must never remove
+> that gate from the remote CI job. Resolve the two independently.
+
+> **Shell-safe command rendering.** Gate command values are interpolated into
+> double-quoted arguments in the generated hooks (`run_gate "…" "…" "<command>"`
+> passed to `sh -c`; `Invoke-Gate … "<command>"` passed to `Invoke-Expression`). A
+> discovered command that itself contains double quotes (e.g.
+> `python -c "import sys"`) would close the argument early and corrupt the script.
+> When resolving `{{*_COMMAND}}` values that contain quotes or shell metacharacters,
+> the installer MUST shell-escape them for the target shell (POSIX form in `.sh`,
+> PowerShell form in `.ps1`), or wrap the logic in a committed script the gate
+> invokes by path. Prefer simple, quote-free gate commands where possible.
+
+**Backlog Tool Variables** (derived from `backlog_tool` profile section):
+
+| Template Variable | Source | Example (backlogit) | Example (backlog-md) |
+|---|---|---|---|
+| `{{BACKLOG_TOOL_NAME}}` | `backlog_tool.tool_name` | `backlogit` | `backlog-md` |
+| `{{BACKLOG_DIRECTORY}}` | `backlog_tool.directory` | `.backlogit` | `backlog` |
+| `{{BACKLOG_TOOL_TYPE}}` | `backlog_tool.tool_type` | `both` | `both` |
+| `{{OP_CREATE_MCP}}` | Registry `operations.create_task.mcp_tool` | `backlogit_create_item` | `task_create` |
+| `{{OP_LIST_MCP}}` | Registry `operations.list_tasks.mcp_tool` | `backlogit_list_items` | `task_list` |
+| `{{OP_GET_MCP}}` | Registry `operations.get_task.mcp_tool` | `backlogit_get_item` | `task_view` |
+| `{{OP_UPDATE_MCP}}` | Registry `operations.update_task.mcp_tool` | `backlogit_update_item` | `task_edit` |
+| `{{OP_MOVE_MCP}}` | Registry `operations.move_task.mcp_tool` | `backlogit_move_item` | `task_edit` |
+| `{{OP_SEARCH_MCP}}` | Registry `operations.search_tasks.mcp_tool` | `backlogit_search_items` | `task_search` |
+| `{{OP_COMPLETE_MCP}}` | Registry `operations.complete_task.mcp_tool` | `backlogit_move_item` | `task_complete` |
+| `{{OP_ARCHIVE_ITEM_MCP}}` | Registry `operations.archive_item.mcp_tool` | `backlogit_archive_item` | `task_archive` |
+| `{{OP_ADD_DEPENDENCY_MCP}}` | Registry `operations.add_dependency.mcp_tool` | `backlogit_add_dependency` | _(empty string)_ |
+| `{{OP_CREATE_CLI}}` | Registry `operations.create_task.cli_command` | `backlogit add` | `backlog task create` |
+| `{{OP_LIST_CLI}}` | Registry `operations.list_tasks.cli_command` | `backlogit list` | `backlog task list` |
+| `{{OP_GET_CLI}}` | Registry `operations.get_task.cli_command` | `backlogit show {id}` | `backlog task view {id}` |
+| `{{OP_UPDATE_CLI}}` | Registry `operations.update_task.cli_command` | `backlogit update {id}` | `backlog task edit {id}` |
+| `{{OP_MOVE_CLI}}` | Registry `operations.move_task.cli_command` | `backlogit move {id} {status}` | `backlog task move {id}` |
+| `{{OP_SEARCH_CLI}}` | Registry `operations.search_tasks.cli_command` | `backlogit search {query}` | `backlog task search` |
+| `{{OP_COMPLETE_CLI}}` | Registry `operations.complete_task.cli_command` | `backlogit done {id}` | `backlog task complete {id}` |
+| `{{OP_ARCHIVE_ITEM_CLI}}` | Registry `operations.archive_item.cli_command` | `backlogit archive {id}` | `backlog archive {id}` |
+
+**Status Variables** (derived from `registry.status_values` — these map abstract status names to tool-specific strings):
+
+| Template Variable | Source | Example (backlogit) | Example (backlog-md) |
+|---|---|---|---|
+| `{{STATUS_QUEUED}}` | Registry `status_values.queued` | `queued` | `To Do` |
+| `{{STATUS_ACTIVE}}` | Registry `status_values.active` | `active` | `In Progress` |
+| `{{STATUS_DONE}}` | Registry `status_values.done` | `done` | `Done` |
+| `{{STATUS_BLOCKED}}` | Registry `status_values.blocked` | `blocked` | `Blocked` |
+| `{{FIELD_TASK_ID}}` | Registry `field_mapping.task_id` | `id` | `id` |
+| `{{FIELD_TITLE}}` | Registry `field_mapping.title` | `title` | `title` |
+| `{{FIELD_STATUS}}` | Registry `field_mapping.status` | `status` | `status` |
+| `{{FIELD_LABELS}}` | Registry `field_mapping.labels` | `labels` | `labels` |
+| `{{FIELD_PARENT_ID}}` | Registry `field_mapping.parent_id` | `parent` | `parent_id` |
+| `{{FIELD_TYPE}}` | Registry `field_mapping.item_type` | `type` | `type` |
+| `{{FIELD_DESCRIPTION}}` | Registry `field_mapping.description` | `description` | `description` |
+| `{{BACKLOG_TOOLS}}` | Backlog MCP server name from registry | `backlog` | `backlog` |
+| `{{BACKLOG_TOOLS_GUARDED}}` | Agent tool declaration for Stage, Ship, and the Orchestrator: equals `{{BACKLOG_TOOLS}}` except for the `backlogit` tool, where it is the enumerated `backlogit/<tool>` list that excludes the raw `backlogit_create_checkpoint` (checkpoints are created only through the guarded adapter `gsd checkpoint create`) | _(enumerated list without raw create)_ | `backlog` |
+| `{{EXTENDED_OPERATIONS_TABLE}}` | Registry `advanced_operations` formatted as Markdown table | _(backlogit-specific ops table)_ | _(empty string if not supported)_ |
+| `{{FEATURE_SHIPMENTS}}` | Registry `features.shipments` | `true` | `false` |
+| `{{OP_CREATE_SHIPMENT_MCP}}` | Registry `operations.create_shipment.mcp_tool` | `backlogit_create_shipment` | _(empty string)_ |
+| `{{OP_SYNC_INDEX_MCP}}` | Registry `operations.sync_index.mcp_tool` | `backlogit_sync_index` | _(empty string)_ |
+| `{{OP_SYNC_INDEX_CLI}}` | Registry `operations.sync_index.cli_command` | `backlogit sync` | _(empty string)_ |
+| `{{OP_GET_SHIPMENT_MCP}}` | Registry `operations.get_shipment.mcp_tool` | `backlogit_get_shipment` | _(empty string)_ |
+| `{{OP_LIST_SHIPMENTS_MCP}}` | Registry `operations.list_shipments.mcp_tool` | `backlogit_list_shipments` | _(empty string)_ |
+| `{{OP_CLAIM_SHIPMENT_MCP}}` | Registry `operations.claim_shipment.mcp_tool` | `backlogit_claim_shipment` | _(empty string)_ |
+| `{{OP_SHIP_SHIPMENT_MCP}}` | Registry `operations.ship_shipment.mcp_tool` | `backlogit_ship_shipment` | _(empty string)_ |
+| `{{OP_ADD_TO_SHIPMENT_MCP}}` | Registry `operations.add_to_shipment.mcp_tool` | `backlogit_add_to_shipment` | _(empty string)_ |
+| `{{OP_RETURN_BLOCKED_MCP}}` | Registry `operations.return_blocked.mcp_tool` | `backlogit_return_blocked` | _(empty string)_ |
+| `{{OP_CREATE_CHECKPOINT_MCP}}` | Registry `operations.create_checkpoint.mcp_tool` | _(empty string; the guarded adapter `gsd checkpoint create` is CLI-only)_ | _(empty string)_ |
+| `{{OP_LIST_CHECKPOINTS_MCP}}` | Registry `operations.list_checkpoints.mcp_tool` | `backlogit_list_checkpoints` | _(empty string)_ |
+| `{{OP_GET_CHECKPOINT_MCP}}` | Registry `operations.get_checkpoint.mcp_tool` | `backlogit_get_checkpoint` | _(empty string)_ |
+| `{{OP_RESOLVE_CHECKPOINT_MCP}}` | Registry `operations.resolve_checkpoint.mcp_tool` | `backlogit_resolve_checkpoint` | _(empty string)_ |
+| `{{OP_POLL_HOOK_EVENTS_MCP}}` | Registry `operations.poll_hook_events.mcp_tool` | `backlogit_poll_hook_events` | _(empty string)_ |
+| `{{OP_ACK_HOOK_EVENTS_MCP}}` | Registry `operations.ack_hook_events.mcp_tool` | `backlogit_ack_hook_events` | _(empty string)_ |
+
+When the selected registry sets `features.shipments: false`, all `{{OP_*_SHIPMENT_MCP}}` variables MUST resolve to the empty string — never to a literal placeholder like "N/A". Shipment behavior is gated by the installed backlog capability/registry configuration (`features.shipments`), and generated artifacts should treat empty shipment-operation variables as the signal to omit shipment-specific commands or guidance.
+
+**Suffix Variables** (derived from `config.backlog.suffix_map` → backlog tool auto-detection → schema defaults):
+
+| Template Variable | Source | Default |
+|---|---|---|
+| `{{SUFFIX_FEATURE}}` | `config.backlog.suffix_map.feature` | `F` |
+| `{{SUFFIX_CHORE}}` | `config.backlog.suffix_map.chore` | `C` |
+| `{{SUFFIX_TASK}}` | `config.backlog.suffix_map.task` | `T` |
+| `{{SUFFIX_SPIKE}}` | `config.backlog.suffix_map.spike` | `SP` |
+| `{{SUFFIX_DELIBERATION}}` | `config.backlog.suffix_map.deliberation` | `D` |
+| `{{SUFFIX_BUG}}` | `config.backlog.suffix_map.bug` | `B` |
+| `{{SUFFIX_EPIC}}` | `config.backlog.suffix_map.epic` | `E` |
+| `{{SUFFIX_SUBTASK}}` | `config.backlog.suffix_map.subtask` | `ST` |
+| `{{SUFFIX_SHIPMENT}}` | `config.backlog.suffix_map.shipment` | `S` |
+
+Resolution order: (1) operator `.gsd/config.yaml` → (2) backlogit project YAML metadata (when backlogit capability pack is active) → (3) schema defaults above.
+
+**Docs Path Variables** (derived from `config.docs.root` and `config.docs.subdirectories` → schema defaults):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{DOCS_ROOT}}` | `config.docs.root` | `docs` | Root directory for durable knowledge |
+| `{{DOCS_COMPOUND}}` | `{DOCS_ROOT}/{config.docs.subdirectories.compound}` | `docs/compound` | Institutional learnings |
+| `{{DOCS_PLANS}}` | `{DOCS_ROOT}/{config.docs.subdirectories.plans}` | `docs/plans` | Implementation plans |
+| `{{DOCS_DECISIONS}}` | `{DOCS_ROOT}/{config.docs.subdirectories.decisions}` | `docs/decisions` | ADRs, deliberation outcomes, spike findings |
+| `{{DOCS_MEMORY}}` | `{DOCS_ROOT}/{config.docs.subdirectories.memory}` | `docs/memory` | Session state and checkpoints |
+| `{{DOCS_CLOSURE}}` | `{DOCS_ROOT}/{config.docs.subdirectories.closure}` | `docs/closure` | Verification, review, safety-check, closure records |
+| `{{DOCS_DESIGN_DOCS}}` | `{DOCS_ROOT}/{config.docs.subdirectories.design_docs}` | `docs/design-docs` | Graduated design decisions and rationale |
+| `{{DOCS_PRODUCT_SPECS}}` | `{DOCS_ROOT}/{config.docs.subdirectories.product_specs}` | `docs/product-specs` | Product requirements and acceptance criteria |
+
+Resolution order: (1) operator `.gsd/config.yaml` → (2) schema defaults. Docs path variables are computed paths (root + subdirectory name joined with `/`).
+
+**Foundation and Conventions Variables** (derived from workspace profile `conventions` and synthesized language knowledge):
+
+| Template Variable | Source | Example (Rust) | Example (TypeScript) | Example (Python) |
+|---|---|---|---|---|
+| `{{DATE}}` | Installation date (`YYYY-MM-DD`) | `2026-04-04` | `2026-04-04` | `2026-04-04` |
+| `{{PROJECT_DESCRIPTION}}` | `harness_recommendations.project_description` or synthesized from README | `"A Rust REST API service"` | `"A React web application"` | `"A Python data pipeline"` |
+| `{{PROJECT_STRUCTURE}}` | Synthesized directory tree from `structure.*` profile fields | _(directory tree block)_ | _(directory tree block)_ | _(directory tree block)_ |
+| `{{CI_NOTES}}` | `ci.notes` or synthesized from `ci.platform` | `"Uses GitHub Actions with matrix builds"` | `"GitHub Actions + Nx affected"` | `"GitHub Actions + tox"` |
+| `{{ADDITIONAL_STACK_ROWS}}` | Extra Markdown table rows for secondary tools (frameworks, DB, etc.) | _(0 or more rows)_ | _(0 or more rows)_ | _(0 or more rows)_ |
+| `{{ADDITIONAL_COMMANDS}}` | Extra command entries for workspace-specific commands | _(0 or more lines)_ | _(0 or more lines)_ | _(0 or more lines)_ |
+| `{{TEST_TIER_DESCRIPTION}}` | Synthesized from `test.*` profile fields | `"Unit: cargo test, Integration: cargo test --test"` | `"Unit: jest, E2E: playwright"` | `"Unit: pytest, Integration: pytest -m integration"` |
+| `{{NAMING_CONVENTIONS}}` | Synthesized language naming rules | `"snake_case for variables, PascalCase for types"` | `"camelCase for variables, PascalCase for types"` | `"snake_case for everything"` |
+| `{{DOCUMENTATION_CONVENTIONS}}` | Synthesized from language doc-comment style | `"/// doc comments on all public items"` | `"JSDoc on all exports"` | `"Google-style docstrings"` |
+| `{{ERROR_HANDLING_CONVENTIONS}}` | Synthesized language error patterns | `"Result<T, E> for fallible operations"` | `"throw Error subclasses, catch at boundaries"` | `"raise specific Exception subclasses"` |
+| `{{LINT_POLICY}}` | Synthesized from lint tool and profile strictness | `"All clippy warnings are hard errors"` | `"eslint --max-warnings 0"` | `"ruff check fails on any warning"` |
+| `{{ERROR_HANDLING_POLICY}}` | Synthesized from `conventions.code_style` | `"All errors must be propagated via Result"` | `"Unhandled promise rejections are errors"` | `"All exceptions must be typed"` |
+| `{{TEST_STRUCTURE}}` | Synthesized from `test.directory` and conventions | `"Unit tests in src/, integration tests in tests/"` | `"Unit tests in __tests__/, E2E in e2e/"` | `"Tests in tests/ directory"` |
+| `{{COMMIT_SCOPES}}` | Derived from `structure.source_layout` top-level directories | `"api, cli, core, db"` | `"app, api, lib, ui"` | `"api, core, utils"` |
+| `{{EXAMPLE_SCOPE}}` | First entry from `{{COMMIT_SCOPES}}` | `"api"` | `"app"` | `"api"` |
+
+**Technology Instruction Variables** (language-knowledge-derived; synthesized per primary language):
+
+| Template Variable | Source | Purpose |
+|---|---|---|
+| `{{LANGUAGE_FILE_GLOB}}` | Derived from `languages.primary` | File glob for language files (e.g., `**/*.rs`, `**/*.ts`, `**/*.py`) |
+| `{{LANGUAGE_VERSION_DETAIL}}` | `languages.version` with edition/variant notes | Full version string (e.g., `Rust 2024 edition`, `TypeScript 5.4 strict`, `Python 3.12`) |
+| `{{NAMING_RULES}}` | Synthesized language naming conventions | Bullet list of naming rules for the language |
+| `{{CODE_ORGANIZATION_RULES}}` | Synthesized from language conventions | Module/package organization rules |
+| `{{ERROR_HANDLING_RULES}}` | Synthesized from `{{ERROR_PATTERN}}` and language idioms | Error handling rules for the language |
+| `{{SAFETY_RULES}}` | Synthesized from `{{UNSAFE_POLICY}}` and language safety model | Safety/correctness rules |
+| `{{PERFORMANCE_RULES}}` | Synthesized from language performance idioms | Performance rules and anti-patterns |
+| `{{TESTING_RULES}}` | Synthesized from `test.*` profile fields | Testing conventions and rules |
+| `{{DOCUMENTATION_RULES}}` | Synthesized from `{{DOC_COMMENT_STYLE}}` | Documentation requirements |
+| `{{DEPENDENCY_RULES}}` | Synthesized from build tool conventions | Dependency management rules |
+| `{{ANTI_PATTERNS}}` | Synthesized language anti-patterns | Language-specific patterns to avoid |
+
+**Review Persona Variables** (language-knowledge-derived; synthesized per primary language):
+
+| Template Variable | Source | Purpose |
+|---|---|---|
+| `{{LANGUAGE_SAFETY_CHECKS}}` | Synthesized from language safety model | Bullet list of safety issues to check in code review |
+| `{{LANGUAGE_IDIOM_CHECKS}}` | Synthesized from language idiomatic patterns | Bullet list of idiomatic pattern checks |
+| `{{LANGUAGE_ERROR_HANDLING_CHECKS}}` | Synthesized from language error model | Bullet list of error handling review checks |
+| `{{LANGUAGE_PERFORMANCE_CHECKS}}` | Synthesized from language performance model | Bullet list of performance review checks |
+| `{{CONCURRENCY_PATTERNS}}` | Synthesized from language concurrency model | Comma-separated or bulleted concurrency patterns that trigger the concurrency reviewer |
+| `{{FILE_EXT}}` | Derived from `languages.primary` | File extension (e.g., `rs`, `ts`, `py`, `go`) |
+| `{{UNIMPLEMENTED_MARKER}}` | Derived from `languages.primary` | Language-specific stub marker (e.g., `unimplemented!()`, `throw new Error("Not implemented")`, `raise NotImplementedError`) |
+
+**Security Surface Variables** (synthesized from workspace profile; used by security-audit skill, security-reviewer, security-lens-reviewer, and security-sentinel templates):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{AGENTIC_CONFIG_GLOB}}` | `agentic.config_paths` from workspace profile | `.github/**,.vscode/**` | Glob patterns for agentic config files scanned during security-audit Phase 2/3 |
+| `{{SOURCE_GLOB}}` | `source.include_patterns` from workspace profile | `src/**` | Application source file glob for security-audit OWASP scan |
+| `{{DOCS_SECURITY}}` | `config.docs.root` + `security` subdirectory | `docs/security` | Output directory for persisted security audit reports |
+| `{{SECURITY_CONFIG_RULES}}` | Synthesized from detected agentic environment (Copilot CLI, VS Code, Claude Code, etc.) | See note | Per-environment config rule table for Tier 1 deterministic checks in security-audit Phase 2 |
+| `{{SECURITY_OWASP_PATTERNS}}` | Synthesized from `languages.primary` | See note | Language-specific OWASP detection pattern set for security-audit Phase 4 |
+| `{{SECURITY_SCAN_PATTERNS}}` | Synthesized from detected technology stack | See note | Full-stack security scan patterns used by security-sentinel for injection, auth, and exposure analysis |
+| `{{SECURITY_REVIEW_PATTERNS}}` | Synthesized from `languages.primary` | See note | Language-specific file path and content signals that trigger the security-reviewer conditional persona |
+
+Resolution notes for security surface variables:
+
+* `{{SECURITY_CONFIG_RULES}}`: Derive from detected agentic environment. For GitHub Copilot CLI: check `.github/` for overly permissive allow-lists and missing input validation in instruction files. For VS Code: check `.vscode/settings.json` for terminal auto-approve patterns. Include rules common to all environments: hardcoded credentials, unpinned secrets, debug endpoints.
+* `{{SECURITY_OWASP_PATTERNS}}`: Select from language knowledge. Python: SQLAlchemy raw queries, `eval()`, `pickle.loads()`, `subprocess.run(shell=True)`, f-string SQL. Go: `fmt.Sprintf` in SQL, `exec.Command` with user input. Rust: `unsafe` blocks, unchecked deserialization. TypeScript: `eval()`, `innerHTML`, unparameterized queries, `child_process.exec`. Adapt to the detected primary language.
+* `{{SECURITY_SCAN_PATTERNS}}`: Combine language-specific OWASP patterns with framework-specific signals (e.g., Express middleware order, Django CSRF, FastAPI auth dependencies). Include auth middleware names, ORM patterns, and framework route decorators for the detected stack.
+* `{{SECURITY_REVIEW_PATTERNS}}`: Bullet list of file path globs and content keywords that trigger security review. Example for Python: `auth*.py`, `permission*.py`, `middleware*.py`, `views.py`, `api.py`, pattern keywords `login`, `token`, `password`, `permission`, `role`, `secret`, `key`, `credential`. Adapt to detected stack.
+
+**Browser & Experiment Variables** (used by browser-automation and iterative-experiment skill templates):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{BROWSER_CLI}}` | `config.browser.cli` or tool detection | `agent-browser` | Browser CLI tool invoked by the browser-automation skill |
+| `{{BROWSER_HEADLESS_FLAG}}` | `config.browser.headless_flag` | `--headless` | Headless flag passed to `{{BROWSER_CLI}}` during automation runs |
+| `{{EXPERIMENT_BRANCH_PREFIX}}` | `config.experiments.branch_prefix` | `experiment/` | Git branch prefix used by the iterative-experiment skill for experiment branches |
+| `{{EXPERIMENT_RESULTS_DIR}}` | `config.experiments.results_dir` | `docs/experiments` | Directory for persisted iterative-experiment TSV logs; configurable, not a hardcoded path |
+
+Resolution notes for browser and experiment variables:
+
+* `{{BROWSER_CLI}}`: Override via `config.browser.cli` if set; otherwise detect from `runtime_surfaces.browser_tooling` in the workspace profile (e.g., Playwright, Puppeteer, agent-browser); falls back to the schema default `agent-browser`.
+* `{{BROWSER_HEADLESS_FLAG}}`: Defaults to `--headless`, which is correct for `agent-browser` and most browser CLIs. CLIs with non-standard headless conventions (e.g., Playwright, which is headless by default and uses `--headed` to run with a visible browser) must set `config.browser.headless_flag` explicitly.
+* `{{EXPERIMENT_BRANCH_PREFIX}}`: Must end with `/`. Validate at resolution time and append `/` if missing.
+* `{{EXPERIMENT_RESULTS_DIR}}`: Must be a relative path within the workspace. Validate at resolution time.
+
+**Guardrail Variables** (used by instruction templates):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{CIRCUIT_BREAKER_COOLDOWN}}` | `config.overrides.CIRCUIT_BREAKER_COOLDOWN` or resolved install defaults | `5 minutes` | Maximum below-threshold cooldown delay before the next counted attempt; never an auto-reset or post-trip probe |
+
+Resolution note for guardrail variables:
+
+* `{{CIRCUIT_BREAKER_COOLDOWN}}`: Default to `5 minutes` unless the operator explicitly overrides it. Keep the value human-readable because it is rendered into instruction prose rather than parsed as machine configuration.
+
+**Health-Check Variables** (used by the harness-doctor skill template):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{HARNESS_MANIFEST_PATH}}` | `config.harness.manifest_path` or schema default | `.gsd/harness-manifest.yaml` | Path to the installed harness manifest; used by harness-doctor to locate the manifest for integrity and version checks |
+| `{{GSD_VERSION}}` | `gsd version` CLI when available, else `internal/version/version.go` (`version.Version`) / `gsd_home` bundle or plugin metadata | _(resolved at install time)_ | The gsd version that performed the install; written to the manifest's `gsd_version` field. harness-doctor resolves the *current* version live and compares it against this recorded value to detect version drift |
+
+Resolution notes for health-check variables:
+
+* `{{HARNESS_MANIFEST_PATH}}`: Defaults to `.gsd/harness-manifest.yaml` relative to the workspace root. Override via `config.harness.manifest_path` in the workspace config. Must be a relative path.
+* `{{GSD_VERSION}}`: Resolve at install time to the **concrete** version of the gsd distribution performing the install, using the first available source: (1) the `gsd version` CLI; (2) `gsd_home` source/bundle metadata — `internal/version/version.go` (`const Version = "..."`) or `.gsd/runtime-manifest.json` (`active_version`); (3) for plugin installs with no CLI binary, the plugin/package manifest version that `gsd_home` was resolved from. The install MUST resolve one of these to a concrete version and MUST never write a literal `{{GSD_VERSION}}` to the manifest — Step 4.1 fails the install if it does.
+
+**Config Write-Back Variables** (used only in `harness-config.yaml.tmpl` for the resolved config file):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{INSTALL_PRESET}}` | Selected preset from Step 1.3 | `standard` | Installation preset name |
+| `{{PRIMARY_STACK_PACK}}` | Selected primary stack pack | `web-app` | Primary additive stack classification used during composition |
+| `{{STACK_PACKS_YAML}}` | YAML list from selected stack packs | `["web-app", "deployable-service"]` | Rendered YAML array of additive stack packs |
+| `{{INSTALL_LAYERS_YAML}}` | YAML list from resolved install layers | `["foundation", "instructions", "workflow", "review", "runtime", "backlog", "knowledge"]` | Rendered YAML array of explicit artifact-class layers |
+| `{{CAPABILITY_PACKS_YAML}}` | YAML list from selected capability packs | `[]` | Rendered YAML array of enabled packs |
+| `{{DOCS_COMPOUND_DIR}}` | `config.docs.subdirectories.compound` | `compound` | Subdirectory name only (not full path) |
+| `{{DOCS_PLANS_DIR}}` | `config.docs.subdirectories.plans` | `plans` | Subdirectory name only |
+| `{{DOCS_DECISIONS_DIR}}` | `config.docs.subdirectories.decisions` | `decisions` | Subdirectory name only |
+| `{{DOCS_MEMORY_DIR}}` | `config.docs.subdirectories.memory` | `memory` | Subdirectory name only |
+| `{{DOCS_CLOSURE_DIR}}` | `config.docs.subdirectories.closure` | `closure` | Subdirectory name only |
+| `{{DOCS_DESIGN_DOCS_DIR}}` | `config.docs.subdirectories.design_docs` | `design-docs` | Subdirectory name only |
+| `{{DOCS_PRODUCT_SPECS_DIR}}` | `config.docs.subdirectories.product_specs` | `product-specs` | Subdirectory name only |
+| `{{CONTINUOUS_LEARNING_DIR}}` | `config.continuous_learning.directory` | `.gsd/continuous-learning` | Repo-local directory for observation, instinct, and learned-artifact state |
+| `{{CONTINUOUS_LEARNING_CAPTURE_HOOKS}}` | `config.continuous_learning.capture_hooks` | `false` | Whether environment-specific hook capture is enabled |
+| `{{CONTINUOUS_LEARNING_ENVIRONMENT_ADAPTER}}` | `config.continuous_learning.environment_adapter` | `none` | Optional hook-capture adapter name |
+| `{{CONTINUOUS_LEARNING_PROMOTION_THRESHOLD}}` | `config.continuous_learning.promotion_threshold` | `3` | Minimum corroborating observations before promotion to a learned artifact |
+| `{{MODEL_ROUTING_TIER1}}` | `config.model_routing.tier1.model` (object form) or `config.model_routing.tier1` (legacy string) | `gpt-5.4-mini` | Fast/cheap model identifier for memory, docs, compaction tasks. When `tier1` is a plain string, that string is used as the model value and all other tier sub-fields default to empty. |
+| `{{MODEL_ROUTING_TIER2}}` | `config.model_routing.tier2.model` (object form) or `config.model_routing.tier2` (legacy string) | `claude-sonnet-5` | Standard model identifier for orchestration, code writing, review. Same string-fallback rule as TIER1. |
+| `{{MODEL_ROUTING_TIER3}}` | `config.model_routing.tier3.model` (object form) or `config.model_routing.tier3` (legacy string) | `claude-opus-5` | Frontier model identifier for planning, architecture, analysis. Same string-fallback rule as TIER1. |
+| `{{TIER_1_REASONING_EFFORT}}` | `config.model_routing.tier1.reasoning_effort` | _(empty)_ | Reasoning effort for Tier 1 agents; leave empty to use model default |
+| `{{TIER_1_PROVIDER}}` | `config.model_routing.tier1.model_provider` | _(empty)_ | Model provider for Tier 1 agents (e.g., `openai`, `anthropic`) |
+| `{{TIER_1_FAMILY}}` | `config.model_routing.tier1.model_family` | `gpt-5.4-mini` | Model family shorthand resolved into Tier 1 agent frontmatter |
+| `{{TIER_2_REASONING_EFFORT}}` | `config.model_routing.tier2.reasoning_effort` | _(empty)_ | Reasoning effort for Tier 2 agents; leave empty to use model default |
+| `{{TIER_2_PROVIDER}}` | `config.model_routing.tier2.model_provider` | _(empty)_ | Model provider for Tier 2 agents (e.g., `openai`, `anthropic`) |
+| `{{TIER_2_FAMILY}}` | `config.model_routing.tier2.model_family` | `claude-sonnet-5` | Model family shorthand resolved into Tier 2 agent frontmatter |
+| `{{TIER_3_REASONING_EFFORT}}` | `config.model_routing.tier3.reasoning_effort` | _(empty)_ | Reasoning effort for Tier 3 agents; leave empty to use model default |
+| `{{TIER_3_PROVIDER}}` | `config.model_routing.tier3.model_provider` | _(empty)_ | Model provider for Tier 3 agents (e.g., `openai`, `anthropic`) |
+| `{{TIER_3_FAMILY}}` | `config.model_routing.tier3.model_family` | `claude-opus-5` | Model family shorthand resolved into Tier 3 agent frontmatter |
+| `{{ORCHESTRATOR_REASONING_EFFORT}}` | `config.model_routing.orchestrator.reasoning_effort` (object form), fallback `{{TIER_2_REASONING_EFFORT}}` | _(empty)_ | Reasoning effort for the Orchestrator; falls back to Tier 2 default |
+| `{{ORCHESTRATOR_PROVIDER}}` | `config.model_routing.orchestrator.model_provider` (object form), fallback `{{TIER_2_PROVIDER}}` | _(empty)_ | Model provider for the Orchestrator; falls back to Tier 2 default |
+| `{{ORCHESTRATOR_FAMILY}}` | `config.model_routing.orchestrator.model_family` (object form) or `config.model_routing.orchestrator` (string form), fallback `gpt-5.4` | `gpt-5.4` | Model family for the Orchestrator; defaults to `gpt-5.4` when unset (does NOT fall back to tier2 — the orchestrator has its own default) |
+| `{{STAGE_REASONING_EFFORT}}` | `config.model_routing.stage.reasoning_effort`, fallback `{{TIER_3_REASONING_EFFORT}}` | _(empty)_ | Reasoning effort for the Stage role route (P-013.5); falls back to Tier 3 when the `stage` route or this sub-field is unset |
+| `{{STAGE_PROVIDER}}` | `config.model_routing.stage.model_provider`, fallback `{{TIER_3_PROVIDER}}` | _(empty)_ | Model provider for the Stage role route (P-013.5); falls back to Tier 3 when the `stage` route or this sub-field is unset |
+| `{{STAGE_FAMILY}}` | `config.model_routing.stage.model_family`, fallback `{{TIER_3_FAMILY}}` | `claude-opus-5` | Model family for the Stage role route (P-013.5); falls back to Tier 3 when the `stage` route or this sub-field is unset |
+| `{{SHIP_REASONING_EFFORT}}` | `config.model_routing.ship.reasoning_effort`, fallback `{{TIER_2_REASONING_EFFORT}}` | _(empty)_ | Reasoning effort for the Ship role route (P-013.5); falls back to Tier 2 when the `ship` route or this sub-field is unset |
+| `{{SHIP_PROVIDER}}` | `config.model_routing.ship.model_provider`, fallback `{{TIER_2_PROVIDER}}` | _(empty)_ | Model provider for the Ship role route (P-013.5); falls back to Tier 2 when the `ship` route or this sub-field is unset |
+| `{{SHIP_FAMILY}}` | `config.model_routing.ship.model_family`, fallback `{{TIER_2_FAMILY}}` | `claude-sonnet-5` | Model family for the Ship role route (P-013.5); falls back to Tier 2 when the `ship` route or this sub-field is unset |
+| `{{ESCALATION_REASONING_EFFORT}}` | F02FD596: `config.model_routing.<role>.escalation.reasoning_effort` (acting role's nested override) → `config.model_routing.escalation.reasoning_effort` (legacy flat, DEPRECATED) → `{{TIER_3_REASONING_EFFORT}}` | _(empty)_ | Reasoning effort for the telemetry-driven auto-escalation route (P-013.6); resolves the acting role's own nested override first, then the legacy flat route, then falls back per-field to Tier 3. **PROSE-ONLY**: this acting-role-collapsed value renders `escalation-protocol.instructions.md.tmpl` and the `_stage.agent.md.tmpl`/`_ship.agent.md.tmpl` narrative only — it MUST NOT be written into `harness-config.yaml.tmpl`'s raw config storage for either the flat or nested blocks (use `{{LEGACY_ESCALATION_REASONING_EFFORT}}` for the flat block and `{{STAGE_ESCALATION_REASONING_EFFORT}}`/`{{SHIP_ESCALATION_REASONING_EFFORT}}` for the nested blocks below), since writing this nested-first-resolved value back into the flat block on a re-render would copy a nested-only override into the flat block, producing the exact flat+nested ambiguity H2 rejects (Copilot review round 3, PR #316). |
+| `{{ESCALATION_PROVIDER}}` | F02FD596: `config.model_routing.<role>.escalation.model_provider` (acting role's nested override) → `config.model_routing.escalation.model_provider` (legacy flat, DEPRECATED) → `{{TIER_3_PROVIDER}}` | _(empty)_ | Model provider for the auto-escalation route (P-013.6); resolves the acting role's own nested override first, then the legacy flat route, then falls back per-field to Tier 3. **PROSE-ONLY** — see `{{ESCALATION_REASONING_EFFORT}}` above for the same raw-storage exclusion. |
+| `{{ESCALATION_FAMILY}}` | F02FD596: `config.model_routing.<role>.escalation.model_family` (acting role's nested override) → `config.model_routing.escalation.model_family` (legacy flat, DEPRECATED) → `{{TIER_3_FAMILY}}` | `claude-opus-5` | Model family for the auto-escalation route (P-013.6); resolves the acting role's own nested override first, then the legacy flat route, then falls back per-field to Tier 3. **Both-present fail-closed (H2)**: when the legacy flat `escalation` AND any nested `<role>.escalation` both declare a non-empty field, this is AMBIGUOUS -- fail closed (schema-invalid / loader hard-error), never auto-pick a winner. **Same-route guard (role-scoped, H3)**: if the fully-resolved `(ESCALATION_FAMILY, ESCALATION_PROVIDER, ESCALATION_REASONING_EFFORT)` tuple for the acting role equals that SAME role's own resolved role route tuple (e.g., Stage's role route already equals tier3), the resolution is `ESCALATION_DEGRADED` (same-route no-op) and the halting agent falls back to the existing operator-halt path rather than auto-escalating to an identical model. **PROSE-ONLY** — see `{{ESCALATION_REASONING_EFFORT}}` above for the same raw-storage exclusion. |
+| `{{LEGACY_ESCALATION_REASONING_EFFORT}}` | `config.model_routing.escalation.reasoning_effort` (raw, NOT resolved/fallback) | _(empty)_ | Raw legacy flat escalation reasoning-effort override, written verbatim into `harness-config.yaml.tmpl`'s flat `escalation` block by Step 3.4 so an operator-declared legacy flat value survives an install/tune re-render exactly as stored, independent of whether any nested `<role>.escalation` override also exists. Distinct from the acting-role-collapsed `{{ESCALATION_REASONING_EFFORT}}` above (prose-only, never round-tripped into raw storage) — using that variable here instead would silently copy a nested-only override into this flat slot on re-render, producing the H2 both-present ambiguity (Copilot review round 3, PR #316). |
+| `{{LEGACY_ESCALATION_PROVIDER}}` | `config.model_routing.escalation.model_provider` (raw, NOT resolved/fallback) | _(empty)_ | Raw legacy flat escalation provider override; same Step 3.4 preservation purpose as `{{LEGACY_ESCALATION_REASONING_EFFORT}}` above |
+| `{{LEGACY_ESCALATION_FAMILY}}` | `config.model_routing.escalation.model_family` (raw, NOT resolved/fallback) | _(empty)_ | Raw legacy flat escalation model_family override; same Step 3.4 preservation purpose as `{{LEGACY_ESCALATION_REASONING_EFFORT}}` above. Leaving all three legacy flat sub-fields empty (the default) renders an inert, all-empty flat `escalation` block that `_escalation_route_has_any_field()` treats as absent — safe to always render alongside the equally-inert-by-default nested `stage.escalation`/`ship.escalation` blocks without triggering H2 |
+| `{{STAGE_ESCALATION_REASONING_EFFORT}}` | `config.model_routing.stage.escalation.reasoning_effort` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Stage escalation reasoning-effort override, written verbatim into `harness-config.yaml.tmpl`'s `stage.escalation` block by Step 3.4 (Write Resolved Configuration) so an operator-declared nested override survives an install/tune re-render. Distinct from `{{ESCALATION_REASONING_EFFORT}}` above, which is the acting-role-collapsed resolved value used only for rendering `escalation-protocol.instructions.md` prose — this variable stores Stage's own raw nested value regardless of which role is being installed. |
+| `{{STAGE_ESCALATION_PROVIDER}}` | `config.model_routing.stage.escalation.model_provider` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Stage escalation provider override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}` above |
+| `{{STAGE_ESCALATION_FAMILY}}` | `config.model_routing.stage.escalation.model_family` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Stage escalation model_family override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}` above. Leaving all three Stage nested sub-fields empty (the default) renders an inert, all-empty `stage.escalation` block that `_escalation_route_has_any_field()` treats as absent — this is safe to always render (never triggers the H2 both-present ambiguity by itself) |
+| `{{SHIP_ESCALATION_REASONING_EFFORT}}` | `config.model_routing.ship.escalation.reasoning_effort` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Ship escalation reasoning-effort override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}`, mirrored for Ship |
+| `{{SHIP_ESCALATION_PROVIDER}}` | `config.model_routing.ship.escalation.model_provider` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Ship escalation provider override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}`, mirrored for Ship |
+| `{{SHIP_ESCALATION_FAMILY}}` | `config.model_routing.ship.escalation.model_family` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Ship escalation model_family override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_FAMILY}}`, mirrored for Ship |
+| `{{TIER_1_CONTEXT_TIER}}` | `config.model_routing.tier1.context_tier` | `default` | Context tier for Tier 1 agents (`default` or `long_context`); an unset/empty value or a legacy string tier resolves to `default`. Written back resolved into `harness-config.yaml.tmpl` |
+| `{{TIER_2_CONTEXT_TIER}}` | `config.model_routing.tier2.context_tier` | `default` | Context tier for Tier 2 agents; same resolution and write-back rule as `{{TIER_1_CONTEXT_TIER}}` |
+| `{{TIER_3_CONTEXT_TIER}}` | `config.model_routing.tier3.context_tier` | `default` | Context tier for Tier 3 agents; same resolution and write-back rule as `{{TIER_1_CONTEXT_TIER}}` |
+| `{{ORCHESTRATOR_CONTEXT_TIER}}` | `config.model_routing.orchestrator.context_tier` (object form), fallback `{{TIER_2_CONTEXT_TIER}}`, then `default` | `default` | Context tier for the Orchestrator; the string form and an unset sub-field fall back to Tier 2. Written back resolved, so an inherited value becomes explicit at install |
+| `{{STAGE_CONTEXT_TIER}}` | `config.model_routing.stage.context_tier`, fallback `{{TIER_3_CONTEXT_TIER}}`, then `default` | `default` | Context tier for the Stage role route (P-013.5); falls back to Tier 3 when the `stage` route or this sub-field is unset. Written back resolved |
+| `{{SHIP_CONTEXT_TIER}}` | `config.model_routing.ship.context_tier`, fallback `{{TIER_2_CONTEXT_TIER}}`, then `default` | `default` | Context tier for the Ship role route (P-013.5); falls back to Tier 2 when the `ship` route or this sub-field is unset. Written back resolved |
+| `{{ESCALATION_CONTEXT_TIER}}` | `config.model_routing.<role>.escalation.context_tier` (acting role's nested override) → `config.model_routing.escalation.context_tier` (legacy flat, only when the flat route is the selected escalation source) → `{{TIER_3_CONTEXT_TIER}}` → `default` | `default` | Context tier for the auto-escalation route (P-013.6). Source selection is unchanged: a nested block that declares only `context_tier` never selects the nested source and never triggers the H2 ambiguity, and a nested source never falls back to the flat route. Not part of the H3 same-route tuple. **PROSE-ONLY** — see `{{ESCALATION_REASONING_EFFORT}}` above for the same raw-storage exclusion |
+| `{{LEGACY_ESCALATION_CONTEXT_TIER}}` | `config.model_routing.escalation.context_tier` (raw, NOT resolved/fallback) | _(empty)_ | Raw legacy flat escalation context-tier override; same Step 3.4 preservation purpose as `{{LEGACY_ESCALATION_REASONING_EFFORT}}` above, so escalation inheritance survives the write-back |
+| `{{STAGE_ESCALATION_CONTEXT_TIER}}` | `config.model_routing.stage.escalation.context_tier` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Stage escalation context-tier override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}` above |
+| `{{SHIP_ESCALATION_CONTEXT_TIER}}` | `config.model_routing.ship.escalation.context_tier` (raw, NOT resolved/fallback) | _(empty)_ | Raw nested Ship escalation context-tier override; same Step 3.4 preservation purpose as `{{STAGE_ESCALATION_REASONING_EFFORT}}`, mirrored for Ship |
+| `{{CONFIG_SCHEMA_VERSION}}` | `config.schema_version` | `1.3.0` | Target schema version written back into `harness-config.yaml.tmpl` (`1.3.0` by default; `1.4.0` when `schema_version: "1.4.0"` is configured) |
+| `{{UNAVAILABLE_ROUTES_YAML}}` | `config.model_routing.unavailable_routes` | _(empty)_ | YAML flow list of unavailable route names rendered under `model_routing:` (`{{OMIT_IF_UNCONFIGURED}}` omits the line when empty) |
+| `{{UNAVAILABLE_FAMILIES_YAML}}` | `config.model_routing.unavailable_families` | _(empty)_ | YAML flow list of unavailable model families rendered under `model_routing:` (`{{OMIT_IF_UNCONFIGURED}}` omits the line when empty) |
+| `{{STAGE_ESCALATION_CHAIN_YAML}}` | `config.model_routing.stage.escalation.chain` | _(empty)_ | JSON/YAML flow array of 1..3 ordered Stage escalation chain levels (`{{OMIT_IF_UNCONFIGURED}}` omits `chain:` when empty) |
+| `{{STAGE_ESCALATION_DIRECT_PREFIX}}` | Derived (`"# "` when `stage.escalation.chain` is non-empty, else `""`) | _(empty)_ | Comments out the 4 direct `stage.escalation` lines in `harness-config.yaml.tmpl` whenever `stage.escalation.chain` is declared, preventing `AMBIGUOUS_ESCALATION_CONFIG` |
+| `{{SHIP_ESCALATION_CHAIN_YAML}}` | `config.model_routing.ship.escalation.chain` | _(empty)_ | JSON/YAML flow array of 1..3 ordered Ship escalation chain levels (`{{OMIT_IF_UNCONFIGURED}}` omits `chain:` when empty) |
+| `{{SHIP_ESCALATION_DIRECT_PREFIX}}` | Derived (`"# "` when `ship.escalation.chain` is non-empty, else `""`) | _(empty)_ | Comments out the 4 direct `ship.escalation` lines in `harness-config.yaml.tmpl` whenever `ship.escalation.chain` is declared, preventing `AMBIGUOUS_ESCALATION_CONFIG` |
+| `{{ANCHOR_REVIEW_PROVIDER}}` | `config.model_routing.anchor_review.model_provider` | `openai` | Provider for the first-class anchor reviewer route used by plan/code/adversarial review when model-specific dispatch is available; declare degradation when unavailable |
+| `{{ANCHOR_REVIEW_FAMILY}}` | `config.model_routing.anchor_review.model_family` | `gpt-5.6-sol` | Model family for the anchor reviewer route; default is OpenAI GPT-5.6 Sol as an environment-agnostic family identifier |
+| `{{ANCHOR_REVIEW_REASONING_EFFORT}}` | `config.model_routing.anchor_review.reasoning_effort` | `high` | Reasoning effort for anchor review when supported; leave empty to use the model default |
+| `{{BROWSER_CLI}}` | `config.browser.cli` | `agent-browser` | Written back into `config.browser.cli` in the resolved harness-config.yaml |
+| `{{BROWSER_HEADLESS_FLAG}}` | `config.browser.headless_flag` | `--headless` | Written back into `config.browser.headless_flag` |
+| `{{EXPERIMENT_BRANCH_PREFIX}}` | `config.experiments.branch_prefix` | `experiment/` | Written back into `config.experiments.branch_prefix` (normalized to end with `/`) |
+| `{{EXPERIMENT_RESULTS_DIR}}` | `config.experiments.results_dir` | `docs/experiments` | Written back into `config.experiments.results_dir` (must be a relative workspace path) |
+| `{{HARNESS_OVERRIDES_YAML}}` | `config.overrides` map | `{}` | Inline YAML map of explicit template variable overrides; `{}` when no overrides are set |
+
+When `config.model_routing.orchestrator` is a plain string (e.g., `orchestrator: "gpt-5.4"`), it is treated as the `model_family` value. The `reasoning_effort` and `model_provider` fields fall back to their tier2 equivalents. When it is an object, each field resolves independently. The plain-string form carries no `context_tier`, so `{{ORCHESTRATOR_CONTEXT_TIER}}` resolves from `tier2.context_tier` and then the literal `default`.
+
+**Role-route tier fallback (P-013.5)**: The `stage` and `ship` routes under `config.model_routing` are optional and resolved **per sub-field**, not as an all-or-nothing block. When the `stage` (or `ship`) route object is absent entirely, or a given sub-field within it is empty/unset, that sub-field resolves from `tier3` (stage) / `tier2` (ship) instead — never from a hardcoded default and never silently from the current session model. The one exception is `context_tier`: its chain (`<role>.context_tier` → tier → literal `default`) terminates at the enum value `default` when no level declares it. This preserves the P-013 tier taxonomy: a role route is a targeted override, not a parallel taxonomy. The installer MUST resolve `{{STAGE_*}}`/`{{SHIP_*}}` variables before rendering `_stage.agent.md` / `_ship.agent.md`, so the installed frontmatter never carries an unresolved `{{...}}` placeholder.
+
+The anchor review route is always object-shaped (`model_provider`, `model_family`, optional `reasoning_effort`) and defaults to `openai` / `gpt-5.6-sol` / `high`. Generated review artifacts must degrade gracefully when the runtime cannot dispatch that provider/family: record `TOOL_DEGRADED` and use the same persona rubric through available reviewers rather than leaving unresolved placeholders in installed output.
+
+**AI Tools Variables** (used only in startup script generation):
+
+| Template Variable | Source | Default | Description |
+|---|---|---|---|
+| `{{COPILOT_EXE_PATH}}` | `config.ai_tools.copilot_cli.exe_path` | `copilot` (legacy current schema default) | Path to the Copilot CLI executable only (no arguments); prefer `.bin/copilot` or `.bin/copilot.exe`. The bare default remains a current compatibility behavior, not a sandbox-local requirement |
+| `{{COPILOT_CLI_ARGS_PS1}}` | `config.ai_tools.copilot_cli.args` | (empty) | Comma-separated, PowerShell-quoted array literal contents baked into `start.ps1`'s `$copilotArguments = @(...)` (e.g. `"--remote"`), always passed before the operator's own argv |
+| `{{COPILOT_CLI_ARGS_SH}}` | `config.ai_tools.copilot_cli.args` | (empty) | Space-separated, POSIX-quoted array literal contents baked into `start.sh`'s `copilot_arguments=(...)` (e.g. `"--remote"`) |
+| `{{ENABLED_SIDECARS_PS1}}` | Derived from enabled capability packs | `"backlogit", "engram", "kbdb"` | Comma-separated, PowerShell-quoted array literal contents baked into `start.ps1`'s `$enabledSidecars = @(...)`, naming which sidecar syncs the script performs before launch. Include `"backlogit"` when the `backlogit` pack is selected, `"engram"` when `agent-engram` is selected, `"kbdb"` when `kbdb` is selected (a legacy `"graphtor-docs"` entry is still honored by the startup scripts as an alias for `"kbdb"`). A capability pack not selected is simply omitted -- its sidecar sync is skipped entirely rather than probed. |
+| `{{ENABLED_SIDECARS_SH}}` | Derived from enabled capability packs | `"backlogit" "engram" "kbdb"` | Space-separated, POSIX-quoted array literal contents baked into `start.sh`'s `enabled_sidecars=(...)`, same semantics as `{{ENABLED_SIDECARS_PS1}}` |
+
+Resolution order: (1) operator `.gsd/config.yaml`
+`ai_tools.copilot_cli.exe_path` → (2) an existing workspace-root `.bin/`
+executable → (3) current schema default `copilot` as legacy compatibility
+(may use PATH). New sandbox-local documentation must show an explicit `.bin/`
+path rather than the fallback.
+`exe_path` must be an executable path only. The generated scripts validate this at runtime.
+
+**Capability-Pack Variables** (derived from `capability_packs` and integration signals in the profile):
+
+| Template Variable | Source | Example (enabled) | Example (disabled) |
+|---|---|---|---|
+| `{{AGENT_ENGRAM_ENABLED}}` | `capability_packs` contains `agent-engram` | `true` | `false` |
+| `{{AGENT_ENGRAM_DETECTED}}` | `agent_engram.detected` | `true` | `false` |
+| `{{AGENT_ENGRAM_CONFIG_PATHS}}` | `agent_engram.config_paths[]` | `.mcp.json, .engram/config.toml` | empty |
+| `{{BROWSER_VERIFICATION_ENABLED}}` | core harness (always active) | `true` | `true` |
+| `{{CONTINUOUS_LEARNING_ENABLED}}` | core harness (always active) | `true` | `true` |
+| `{{AGENT_NATIVE_REVIEWER_RECOMMENDED}}` | `agent_native.recommended_reviewer` | `true` | `false` |
+| `{{AGENT_ADVERSARIAL_REVIEW_ENABLED}}` | core harness (always active) | `true` | `true` |
+| `{{KBDB_ENABLED}}` | `capability_packs` contains `kbdb` (legacy `graphtor-docs` is normalized to `kbdb`) | `true` | `false` |
+| `{{KBDB_DETECTED}}` | `kbdb.detected` (legacy fallback: `graphtor_docs.detected`) | `true` | `false` |
+| `{{KBDB_SOURCES_PATH}}` | `kbdb.sources_path` or operator `kbdb.sources_path` (legacy fallback: `graphtor_docs.sources_path`) | `.kbdb/config/sources.yaml` | `.kbdb/config/sources.yaml` |
+| `{{KBDB_BINARY_PATH}}` | binary path from `kbdb` detection or operator `kbdb.binary_path` (legacy fallback: `graphtor_docs.binary_path`) | `.kbdb/bin/kbdb` | `.kbdb/bin/kbdb` |
+| `{{KBDB_EMBED_MODEL_DIR}}` | operator `kbdb.embed_model_dir` or profile `kbdb.embed_model_dir`, else default `{{WORKSPACE_ROOT}}` joined with `.kbdb/models/all-MiniLM-L6-v2` using the workspace-native path separator | `C:\Source\my-app\.kbdb\models\all-MiniLM-L6-v2` | `/srv/my-api/.kbdb/models/all-MiniLM-L6-v2` |
+| `{{KBDB_ENV_BLOCK}}` | `.env.local` kbdb block — when `{{KBDB_ENABLED}}` is `true`, resolves to a leading blank line, a short comment, and `KBDB_EMBED_MODEL_DIR={{KBDB_EMBED_MODEL_DIR}}`; otherwise resolves to an empty string | `\n# kbdb: ...\nKBDB_EMBED_MODEL_DIR=...` | `` (empty) |
+
+Note: These capability-pack and reviewer-selection variables are used internally by the installer during overlay composition. They drive conditional template selection and pack weaving logic. They are not emitted into installed artifact text — a capability pack's effects appear through the overlay content woven into templates, not through literal variable substitution.
+
+**Runtime validator profile inputs** (consumed structurally — not emitted as literal template variables):
+
+| Profile Path | Primary Consumers | Purpose |
+|---|---|---|
+| `runtime_validation.validator_manifest` | `_ship.agent.md`, `runtime-verification/SKILL.md` | Surface adapters, probe hints, and manual checkpoints for the runtime validator |
+| `runtime_validation.validation_expectations` | `_ship.agent.md`, `runtime-verification/SKILL.md` | Expected surfaces, minimum verdict, invariants, and explicit release blockers |
+| `runtime_validation.releasability` | `operational-closure/SKILL.md`, `release-observability.instructions.md` | Required releasability evidence such as monitoring, rollback, owner, and validation-window expectations |
+
+**Alternate Model Variables** (used by `adversarial-review` and `doc-review` templates when alternate provider support is enabled):
+
+| Template Variable | Source | Example (Gemini) | Example (none) |
+|---|---|---|---|
+| `{{ALT_REVIEW_PROVIDER}}` | `config.model_routing.alt_review.model_provider` or operator override | `google` | _(empty string)_ |
+| `{{ALT_REVIEW_FAMILY}}` | `config.model_routing.alt_review.model_family` or operator override | `gemini-2.5-flash` | _(empty string)_ |
+| `{{ALT_DOC_REVIEW_PROVIDER}}` | `config.model_routing.alt_doc_review.model_provider` or operator override | `google` | _(empty string)_ |
+| `{{ALT_DOC_REVIEW_FAMILY}}` | `config.model_routing.alt_doc_review.model_family` or operator override | `gemini-2.5-pro` | _(empty string)_ |
+
+Resolution notes for alternate model variables:
+
+* When both `*_PROVIDER` and `*_FAMILY` are non-empty, the corresponding skill or agent routes one reviewer/review slot to the alternate provider. When either is empty, standard tier routing applies.
+* The harness config schema accepts `config.model_routing.alt_review` and `config.model_routing.alt_doc_review` as object-shaped routes with `model_provider` and `model_family`; unknown fields are rejected so misspelled provider settings do not silently disappear.
+* `{{ALT_REVIEW_PROVIDER}}` / `{{ALT_REVIEW_FAMILY}}` replace Reviewer-B (Tier 2 slot) in the adversarial-review agent's reviewer pool. This ensures cross-provider diversity without requiring additional reviewer count.
+* `{{ALT_DOC_REVIEW_PROVIDER}}` / `{{ALT_DOC_REVIEW_FAMILY}}` determine the model used for the entire doc-review skill pass. When empty, doc-review uses Tier 2.
+* `{{ALT_DOC_REVIEW_PROVIDER}}` / `{{ALT_DOC_REVIEW_FAMILY}}` and `{{ALT_REVIEW_PROVIDER}}` / `{{ALT_REVIEW_FAMILY}}` default to `"none"` (or the empty string) when the operator has not configured an alternate model. Both `"none"` and the empty string trigger the Tier 2 fallback, and templates that reference them must degrade gracefully to Tier 2 defaults.
+* `{{SOURCE_GLOB}}` derives a brace-expanded pattern across all declared `structure.source_dirs` / `structure.source_layout` roots when multiple source directories exist.
+
+**Community template variables** — used by templates in `templates/community/` when selected during Step 1.3a:
+
+| Variable | Resolved From | Example (Rust) | Example (Go) | Example (Python) |
+|---|---|---|---|---|
+| `{{ADR_DIRECTORY}}` | operator `community.adr_directory` or default | `docs/adrs` | `docs/adrs` | `docs/adrs` |
+| `{{REVIEW_LANGUAGE}}` | operator `community.review_language` or default `English` | `English` | `English` | `English` |
+| `{{CODEBASE_DOCS_DIRECTORY}}` | operator `community.codebase_docs_directory` or default `docs/codebase` | `docs/codebase` | `docs/codebase` | `docs/codebase` |
+| `{{PLANS_DIRECTORY}}` | operator `community.plans_directory` or default `docs/plans` | `docs/plans` | `docs/plans` | `docs/plans` |
+| `{{TEST_COMMAND}}` | `test.command` from workspace profile or operator override | `cargo test` | `go test ./...` | `pytest` |
+| `{{COMMIT_PREFIX}}` | operator `community.commit_prefix` or default `feat` | `feat` | `feat` | `feat` |
+| `{{CHANGELOG_STYLE_FILE}}` | operator `community.changelog_style_file` or default `CHANGELOG_STYLE.md` | `CHANGELOG_STYLE.md` | `CHANGELOG_STYLE.md` | `CHANGELOG_STYLE.md` |
+| `{{CHANGELOG_FILE}}` | operator `community.changelog_file` or default `CHANGELOG.md` | `CHANGELOG.md` | `CHANGELOG.md` | `CHANGELOG.md` |
+
+Note: Community template variables are resolved only when the operator selects the corresponding community template during Step 1.3a. They are not resolved for templates that are not selected.
+
+#### Step 1.3: Select Preset, Primitive Set, and Capability Packs
+
+Resolve the installation shape in this order:
+
+1. If `primitives` input is provided, use it directly.
+2. Otherwise, use the primitive set implied by `preset`.
+3. If no preset is provided, default to `standard`.
+4. Resolve `primary_stack_pack` from operator config first, then from the
+   workspace profile.
+5. Resolve additive `stack_packs` from operator config first, then from the
+   workspace profile.
+6. Resolve `capability_packs` from explicit input first, then operator config,
+   then profile recommendations.
+7. Resolve `install_layers` from operator config first; otherwise use
+   `harness_recommendations.install_layers`; otherwise derive them from the
+   selected preset and whether overlays are enabled.
+
+Preset defaults:
+
+| Preset | Default Primitives | Default Capability Packs | Best For |
+|---|---|---|---|
+| `starter` | 1, 2, 4, 5, 6, 8, 9 | none | First-time adoption, smaller repos |
+| `standard` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 | none (`capability_packs: []`) | Most repositories |
+| `full` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 | `agent-engram`, `backlogit`, `kbdb` | Higher-operational-maturity teams |
+
+If `capability_packs` input is provided explicitly, use it as-is regardless of preset (after dropping retired and folded packs, see below). If `capability_packs` input is omitted: for `full`, install `agent-engram`, `backlogit`, and `kbdb`; for `standard` and `starter`, apply no capability packs (`capability_packs: []`).
+
+Every preset's core harness install set includes the 5 former internal packs' core instruction files (`browser-verification.instructions.md`, `continuous-learning.instructions.md`, `strict-safety.instructions.md`, `release-observability.instructions.md`, `adversarial-review.instructions.md`), the standalone multi-model review subagent (`.github/agents/subagents/adversarial-review.agent.md`), and all remaining core template skills, independent of `capability_packs`.
+
+#### Retired capability packs
+
+`agent-intercom` was retired and is no longer a capability pack: discovery never detects or recommends it, no preset installs it, and no overlay is woven for it. When an operator passes it explicitly (`capability_packs=agent-intercom`, or a retained config or profile still lists it), print `RETIRED_PACK: agent-intercom ignored`, drop it from the resolved `capability_packs` list, and continue the install with the remaining packs. Never write it to the new profile, manifest or config, and never re-weave its overlay. An already-installed workspace that still records it is handled by `tune-harness`, which reports the retired pack and offers cleanup.
+
+#### Folded Core Packs
+
+`browser-verification`, `continuous-learning`, `strict-safety`, `release-observability`, `adversarial-review` are no longer capability packs; they are part of the core harness. When an operator passes one explicitly, or a retained config, profile, or manifest still lists it, print `FOLDED_CORE_PACK: <pack> is now part of the core harness (ignored as capability pack)`, drop it from the resolved `capability_packs` list, and continue the install. The pack's core instruction file, the `adversarial-review` subagent, and the core skills are installed regardless. This is non-blocking legacy tolerance.
+
+Verification of a `standard` install with `capability_packs: []` has three separate layers: (a) `gsd install --preset standard` only scaffolds `.gsd/config.yaml` and prints the composition handoff, skipping verification because no `.gsd/harness-manifest.yaml` exists yet; (b) this skill's composition step must write the core artifacts and `.gsd/harness-manifest.yaml` before checking rendered artifacts and running `gsd verify-workspace`; (c) `TestStandardPresetNoCapabilityPacksCoreProtocolsActive` in `internal/verifyworkspace/verify_test.go` is the deterministic Go fixture.
+
+#### Pack-scope markers
+
+Rendered templates may wrap pack-specific content in paired HTML comment markers `<!-- pack-scope:{pack}:begin -->` and `<!-- pack-scope:{pack}:end -->` (for example `agent-engram` in `copilot-instructions.md`). The template engine has no conditionals, so after rendering, prune each marked section whose pack is not in the resolved `capability_packs` list: delete everything from the `begin` marker through the matching `end` marker, inclusive, and also delete a parent heading left with no remaining content (for example `## Remote Operator Integration` when its only pack section was pruned). For an enabled pack, keep the content and leave the markers in place. Verification requires the pack's assertions (`PACK_ASSERTIONS`) only when the pack is enabled, so a pruned section is never a verification failure. An unpaired or unknown-pack marker is an installation error.
+
+Additive stack packs are descriptive composition inputs rather than substitute
+architectures. They capture multiple concurrent workspace shapes such as
+`web-app`, `api-service`, `background-worker`, `deployable-service`,
+`mcp-server`, `cli-tool`, or `library`.
+
+Install-layer defaults:
+
+| Preset | Default Install Layers |
+|---|---|
+| `starter` | `foundation`, `instructions`, `workflow`, `backlog`, `knowledge` |
+| `standard` | `starter` layers + `review`, `runtime` |
+| `full` | `standard` layers + `overlays` when recommended or explicitly selected packs are enabled |
+
+Add the `overlays` layer whenever one or more capability packs are selected,
+even if the chosen preset is `starter` or `standard`.
+
+If `capability_packs` is non-empty but `install_layers` does not include
+`overlays`, add `overlays` automatically and warn the operator. If
+`install_layers` includes `overlays` but `capability_packs` is empty, warn the
+operator that the overlays layer has no packs to weave.
+
+Treat install layers as **explicit artifact-class composition**, not as a second
+primitive system:
+
+| Install Layer | Primary Artifact Classes |
+|---|---|
+| `foundation` | `AGENTS.md`, `copilot-instructions.md`, constitution |
+| `instructions` | language instructions, workflow instructions, integration instructions |
+| `workflow` | stage/ship/support agents, core skills, policies, prompts |
+| `review` | review personas plus `review` / `plan-review` routing |
+| `runtime` | runtime verification, operational closure, runtime-facing handoff guidance |
+| `backlog` | backlog registry, backlog config, backlog integration guidance |
+| `knowledge` | docs-root structure, compound/memory/closure/plans conventions |
+| `overlays` | capability-pack-specific instructions plus woven overlay targets |
+
+If operator-specified `install_layers` contradict the selected primitive set,
+halt and ask for correction rather than silently producing an incoherent
+composition.
+
+Capability-pack overlays (external-tool integrations only; the former internal packs are core harness protocols activated by surface/primitive condition):
+
+| Capability Pack | Overlay Behavior |
+|---|---|
+| `agent-engram` | Installs `agent-engram.instructions.md` and threads engram-first indexed search, workspace binding, freshness checks, and code-graph-driven analysis through foundation docs and analysis-heavy workflows |
+| `backlogit` | Installs `backlogit.instructions.md`, `backlogit-sql-schema.instructions.md`, and `backlogit-yaml-header-tooling.instructions.md`, and threads backlogit-native query, queue, dependency, memory, checkpoint, comment, commit-trace, and source-artifact-cleanup workflows through backlog-aware artifacts |
+| `kbdb` | Installs `kbdb.instructions.md` and threads indexed local documentation retrieval — keyword search, semantic search, topic research, doc-graph traversal — through research, planning, and knowledge-retrieval workflows so agents resolve domain concepts and APIs from indexed sources before falling back to broad web or filesystem search. Also weaves a `KBDB_EMBED_MODEL_DIR` entry into the workspace-root `.env.local` (via `{{KBDB_ENV_BLOCK}}`) so the local embedding model directory is available for offline vector search |
+
+#### Step 1.3a: Community Template Selection
+
+After resolving the installation shape and before applying capability-pack
+overlays, evaluate community templates from the gsd registry:
+
+1. Read `templates/community/registry.yaml` from `gsd_home`.
+   If the file does not exist or `templates` is empty, skip this step.
+2. For each registry entry, evaluate `applicable_profiles` against the
+   workspace profile's detected languages, frameworks, and stack packs:
+   * An entry with `"any"` in `applicable_profiles` matches all workspaces.
+   * An entry listing specific profiles (e.g., `"python"`, `"web-app"`)
+     matches when the workspace profile's languages, frameworks, or stack
+     packs include at least one of those values.
+3. Check `prerequisite_packs` — only propose entries whose prerequisites
+   are a subset of the selected `capability_packs`. If `prerequisite_packs`
+   is empty, the entry has no pack prerequisites.
+4. Produce a ranked list of applicable community templates. Rank by:
+   * Number of matching profile tags (more matches = higher rank)
+   * Number of `primitives_deepened` that overlap with `primitives_installed`
+5. Present the ranked list to the operator for **opt-in selection**.
+   Community templates are **never auto-installed**. The operator may
+   select all, some, or none.
+6. For each selected template:
+   * Read the `.tmpl` file from `gsd_home` at the entry's
+     `template_path`.
+   * Resolve `{{VARIABLE}}` placeholders using the same variable resolution
+     table as first-party templates. If the template introduces new
+     variables (listed in `variables_introduced`), prompt the operator for
+     values or use defaults from the workspace profile.
+   * Place the resolved artifact in the target workspace following the same
+     artifact-class placement rules as first-party templates (agents →
+     `.github/agents/`, instructions → `.github/instructions/`, skills →
+     `.github/skills/`, prompts → `.github/prompts/`).
+7. Record selected community templates in the harness manifest under
+   `community_templates[]` with both `installed_checksum` (SHA-256 of the
+   resolved installed artifact) and `source_checksum` (SHA-256 of the source
+   `.tmpl` file at install time). This dual-checksum design enables the tuner
+   to distinguish local modifications from upstream template updates. See
+   schema at `schemas/harness-manifest.schema.json`.
+
+Community templates are part of the `overlays` install layer. If any
+community templates are selected and `install_layers` does not already
+include `overlays`, add it automatically.
+
+#### Step 1.3b: Apply the Formal Overlay Contract
+
+Treat every selected capability pack as a cross-cutting overlay rather than a single-file option.
+
+For each selected pack, define and apply:
+
+1. **Eligibility signals** — why the pack was selected or recommended
+2. **Overlay targets** — the artifact classes that must be updated together
+3. **Behavior deltas** — the changes to workflow behavior introduced by the pack
+4. **Verification checks** — how install verification proves the overlay is coherently woven
+
+Overlay targets may span:
+
+* Foundation docs (`AGENTS.md`, `copilot-instructions.md`, constitution)
+* Instruction files
+* Pipeline agents
+* Long-running or gating skills
+* Prompts
+* Policies
+
+Do not model a capability pack as a single isolated artifact when its behavior is inherently cross-cutting.
+
+Example overlay target map for `backlogit`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Token-efficient lookup | foundation docs, backlog instructions, backlog-aware agents |
+| Ready-work selection | ship agent and backlog-aware instructions |
+| Agent continuity | stage and ship session continuity, foundation docs |
+| Traceability | backlog-aware agents and instructions |
+| Schema and tooling reference | backlogit-specific instruction files plus backlog-aware workflows that inspect SQL, frontmatter, or `custom_fields` |
+| Source artifact cleanup | `_ship.agent.md`, `operational-closure/SKILL.md`, and closure-facing traceability guidance |
+
+Example overlay target map for `agent-engram`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Indexed search routing | foundation docs, `agent-engram.instructions.md`, research / planning / build workflows |
+| Workspace binding and freshness | instructions plus workflows that depend on indexed results |
+| Code-graph blast radius analysis | harness / build / repair workflows that inspect symbols and callers |
+
+#### Formal Overlay Contract: `agent-engram`
+
+**Eligibility signals** (when to recommend agent-engram):
+* `.mcp.json` (root, canonical shared config) references `engram` server or known engram tool names
+* legacy editor-local MCP settings still reference Engram tool names (compatibility fallback only)
+* `.engram/config.toml`, `.engram/registry.yaml`, or `.engram/code-graph/` present at workspace root
+* `AGENTS.md` or `.github/copilot-instructions.md` contains `<!-- engram:start -->` marker or Engram tool names
+
+**Recommendation logic**: Recommend when `agent_engram.mcp_configured: true` OR `agent_engram.detected: true` in the workspace profile.
+
+**Overlay targets**:
+* `foundation-docs` — AGENTS.md, copilot-instructions.md (engram:start/end block)
+* `agent-engram.instructions.md` — primary instruction file installed at `.github/instructions/`
+* `pipeline-agents` — _stage.agent.md, _ship.agent.md: session-start daemon check, pre-planning search, pre-build impact analysis
+* `analysis-heavy-workflows` — research/planning/build skills: add `unified_search` / `impact_analysis` guidance
+
+**Behavior deltas**:
+* Session start: call `get_workspace_status` to verify daemon readiness and workspace binding; log `ENGRAM_OK` or `ENGRAM_DEGRADED`
+* Before planning: run `unified_search` or `impact_analysis` to assess blast radius before invoking impl-plan
+* Before build: run `impact_analysis` on the task's primary symbol/file scope before beginning code changes
+* Fallback: `ENGRAM_DEGRADED` mode — use file-based tools (grep, glob, view); do not halt session
+
+**Verification checks** (installation-time):
+* `agent-engram.instructions.md` installed at `.github/instructions/` with valid YAML frontmatter
+* `_stage.agent.md` contains Engram session-start check (`get_workspace_status`) and pre-planning search step
+* `_ship.agent.md` contains Engram session-start check (`get_workspace_status`) and pre-build impact-analysis step
+* `copilot-instructions.md` engram block cross-references installed instructions (`agent-engram.instructions.md`)
+* No unresolved `{{VARIABLE}}` in `agent-engram.instructions.md` (template has none — direct copy)
+
+**Tuning drift checks**:
+* `agent-engram.instructions.md` checksum vs. template checksum in harness-manifest
+* _stage.agent.md and _ship.agent.md contain `get_workspace_status` reference (text search)
+* copilot-instructions.md contains `engram:start` / `engram:end` markers (text search)
+
+#### Formal Overlay Contract: `backlogit`
+
+**Eligibility signals** (when to recommend backlogit):
+* `.vscode/mcp.json` or `.mcp.json` configures the `backlogit` MCP server
+* `.backlogit/` directory present with a config file
+* `AGENTS.md` or agent files reference backlogit tool names (`backlogit_query_sql`, `backlogit_get_queue`, `backlogit_resolve_checkpoint`)
+
+**Recommendation logic**: Recommend when `backlog_tool.detected: true` and `backlog_tool.tool_name` is `backlogit` in the workspace profile.
+
+**Overlay targets**:
+* `backlogit.instructions.md` — primary instruction file installed at `.github/instructions/`, hosting the Query-First, Queue-and-Dependency, Shipment-Sequencing, Continuity, Traceability, Lifecycle-Hygiene, and Checkpoint-Recovery / Prune-on-Restore protocols
+* `backlogit-sql-schema.instructions.md`, `backlogit-yaml-header-tooling.instructions.md` — companion reference instructions
+* `pipeline-agents` — `_orchestrator.agent.md`, `_stage.agent.md`, `_ship.agent.md`: crash-resumption / owner-scoped checkpoint-recovery lifecycle (see each agent's own template section)
+* `backlog-aware-workflows` — ready-work selection, continuity checkpoints, traceability
+
+**Behavior deltas**:
+* Session start (Orchestrator): enumerate ALL recovery-candidate checkpoints without a `status` filter, fail closed on any validation/quarantine anomaly first, then partition to active candidates; zero-candidate case continues normally, one-or-more engages explicit-selection + ownership-routing per the Orchestrator's Crash-Resumption Protocol
+* Session start (Stage/Ship): apply the owner-scoped fail-closed crash-resumption lifecycle to the agent's own (`stage`/`ship`) checkpoints only — same unfiltered-enumeration + anomaly-first-fail-closed pattern as the Orchestrator, partitioned to the agent's own ownership
+* On restore: apply bounded prune-on-restore (read-select-summarize; never prune the active cursor, unresolved-checkpoint pointer, or gate verdicts) ONLY when the `agent-engram` capability pack is installed/active; a backlogit-only installation (no `agent-engram`) is a supported non-degraded no-op that skips directly from restore to resume
+* Fallback: backlogit or checkpoint `state_dump` unreachable/malformed at restore → operator handoff, no auto-resume; `agent-engram` unreachable at restore (whether at startup or mid-session after `ENGRAM_OK`) → graceful degradation (`ENGRAM_DEGRADED: skipping engram prune on restore; summarizing checkpoint state_dump only` / `TOOL_DEGRADED: agent-engram`) over `backlogit` `state_dump` and `docs/memory/`, then resume (this is distinct from `agent-engram` simply not being installed, which is the supported no-prune path above, never a fallback/degraded condition)
+* Hygiene ordering: `cleanup_checkpoints` (retention-based archival, which can remove still-`active` records purely for age) is sequenced AFTER every active checkpoint has reached ACTUAL resolution (`resolve_checkpoint` after a confirmed successful resume) or a separate, explicit, named operator archival/abandonment decision — a fail-closed operator handoff is NEITHER of these and does NOT satisfy this gate, since handoff by design performs no resolve and deliberately leaves the checkpoint active/unresolved to preserve it for the next session; `cleanup_checkpoints` is never called against a checkpoint population that hasn't yet reached one of these two explicit dispositions
+
+**Manifest registration** (standard first-party single-`checksum` contract — mirrors the `agent-engram`/`kbdb` overlay artifact entries; NOT the community-template `installed_checksum`/`source_checksum` pair):
+1. Record `.github/instructions/backlogit.instructions.md` under `artifacts:` with `path`, `primitive`, `template: "instructions/backlogit.instructions.md.tmpl"`, and a single `checksum` field computed from the installed (variable-resolved) file content.
+2. Resolve every `{{VARIABLE}}` customization point at install time — no unresolved placeholder may remain in the installed file.
+3. Add a `capability_pack_overlays[]` entry for `pack: "backlogit"` (or extend the existing one) with a `verification_checks` row: `"backlogit.instructions.md installed at .github/instructions/"`, consistent with its existing `overlay_targets: instructions`.
+4. **Idempotent**: re-install (fresh, merge, or self-install) or re-tune refreshes the existing artifact entry and checksum in place — it never duplicates the entry.
+5. This applies in ANY target workspace where the `backlogit` capability pack is enabled, not only this dogfood workspace.
+6. No new manifest primitive and no schema change — reuse the existing single `artifacts[].checksum` surface only.
+
+**Verification checks** (installation-time):
+* `backlogit.instructions.md` installed at `.github/instructions/` with valid YAML frontmatter
+* Zero `{{VARIABLE}}` placeholders in the installed file
+* Installed file's checksum matches the manifest `artifacts[].checksum` entry for `.github/instructions/backlogit.instructions.md` (section-presence + single-checksum coherence; NOT installed-vs-source-template drift comparison)
+* `.github/instructions/backlogit.instructions.md` contains the Checkpoint-Recovery / Prune-on-Restore Protocol section
+
+**Tuning drift checks**:
+* `backlogit.instructions.md` checksum vs. the manifest `artifacts[].checksum` entry — refresh both the file (re-render from template, re-resolving variables) and the recorded checksum together whenever the template changes
+* `capability_pack_overlays[]` `backlogit` entry retains its `"backlogit.instructions.md installed at .github/instructions/"` verification-check row
+
+#### Formal Overlay Contract: `kbdb`
+
+`kbdb` was renamed from `graphtor-docs` (deliberation `045-DL`). Existing workspaces whose config, manifest, or profile still list `graphtor-docs` / `graphtor_docs` are tolerated as non-blocking legacy aliases; tune normalizes them to `kbdb`.
+
+**Eligibility signals** (when to recommend kbdb):
+* `.mcp.json` (root, canonical shared config) references the `kbdb` server
+* legacy editor-local MCP settings still reference kbdb tool names (compatibility fallback only)
+* `.kbdb/` directory present at workspace root, OR `.kbdb/config/sources.yaml` or `.kbdb/config/` exists
+* `AGENTS.md` or agent files reference kbdb tool names (`search_local_docs`, `search_semantic`, `research_topic`, `get_status`)
+* `kbdb` binary present under `.bin/`; PATH and `.kbdb/bin/` are legacy compatibility signals
+
+**Recommendation logic**: Recommend when `kbdb.mcp_configured: true` OR `kbdb.detected: true` in the workspace profile (legacy `graphtor_docs.*` keys are read as a fallback).
+
+**Overlay targets**:
+* `kbdb.instructions.md` — primary instruction file (two template variables require discovery-first resolution)
+* `pipeline-agents` — _stage.agent.md, _ship.agent.md: session-start server check, pre-planning doc research, pre-build doc search, multi-pack routing note
+* `research-skills` — any research or learnings-retrieval skill: prefer kbdb for doc lookup over broad grep
+* `workspace-profile` — requires `kbdb` section with `sources_path` and `binary_path` (string|null)
+
+**Behavior deltas**:
+* Session start: `get_status` check once per session — log `KBDB_OK` or `KBDB_UNAVAILABLE`
+* Before planning: `research_topic` or `search_local_docs` before impl-plan for domain concepts and API references
+* Before build: `search_local_docs` or `search_semantic` for documentation questions
+* Routing split when Engram is also active: Engram handles code relationships, impact analysis, and git history; kbdb handles documentation lookup, API references, and concept research
+* Fallback: `KBDB_UNAVAILABLE` — grep/view over `docs/` directory; do not halt session
+
+**Variable resolution for `kbdb.instructions.md`**:
+
+This is the only pack in the current instruction set that produces a workspace-specific installed file — both template variables require discovery before rendering:
+
+| Variable | Resolution Order | Example |
+|---|---|---|
+| `{{KBDB_SOURCES_PATH}}` | 1. Check `.kbdb/config/sources.yaml`; 2. Check `.kbdb/sources.yaml`; 3. Legacy: `.graphtor/config/sources.yaml` or `.graphtor/sources.yaml`; 4. Default: `.kbdb/config/sources.yaml` | `.kbdb/config/sources.yaml` |
+| `{{KBDB_BINARY_PATH}}` | 1. `.bin/kbdb.exe` or `.bin/kbdb`; 2. configured workspace-local path; 3. legacy PATH / `.kbdb/bin/` / `graphtor`; 4. bare `kbdb` only as an explicitly labeled compatibility fallback | `.bin/kbdb.exe` |
+
+After resolution, verify no `{{...}}` remain in the rendered file before recording the artifact checksum.
+
+**Verification checks** (installation-time):
+* `kbdb.instructions.md` installed at `.github/instructions/` with valid YAML frontmatter
+* Zero `{{VARIABLE}}` placeholders in installed file (both `KBDB_SOURCES_PATH` and `KBDB_BINARY_PATH` must be resolved)
+* _stage.agent.md and _ship.agent.md contain `KBDB_UNAVAILABLE` reference
+* workspace-profile.yaml has `kbdb` section with `sources_path` and `binary_path` (string|null)
+
+**Tuning drift checks**:
+* `kbdb.instructions.md` checksum comparison: note that because template variables are resolved at install time, the installed checksum is workspace-specific — the tuner should compare the rendered content against a fresh render from the template (re-resolving variables), NOT against the raw template file. If both `KBDB_SOURCES_PATH` and `KBDB_BINARY_PATH` are unchanged, checksums will match; if the paths changed, the tuner should flag for re-render.
+* _stage.agent.md and _ship.agent.md contain `KBDB_UNAVAILABLE` reference (text search)
+* workspace-profile.yaml contains `kbdb` section (structural check)
+
+#### Capability-Pack Usage-Enforcement Coordinator (retrieval-enforced packs)
+
+When at least one **retrieval-enforced** pack — `agent-engram` or `kbdb`
+(the packs marked `retrieval_enforced: true` in
+`templates/packs/capability-pack-registry.yaml`) — is selected, the installer
+MUST additionally install the coordinator instruction
+`capability-pack-enforcement.instructions.md`. This single globally-applied file
+(`applyTo: '**'`) tells agents to route retrieval through the enabled indexed
+packs before falling back to raw grep/glob/web search, and it defers pack-specific
+mechanics to the individual pack instruction files.
+
+**Overlay targets**:
+* `capability-pack-enforcement.instructions.md` — coordinator instruction installed at `.github/instructions/`
+* `manifest` — `artifacts[]` entry (primitive 6) plus one verification-check row appended to each enabled retrieval-enforced pack's `capability_pack_overlays[]`
+
+**Install rules**:
+* Render the route block so `<!-- route:{id} -->` rows represent **EXACTLY** the
+  enabled retrieval-enforced set — one row when only `agent-engram` or only
+  `kbdb` is selected, both rows when both are selected. Never emit a
+  route row for a pack that was not selected.
+* Render the deferral block so its deferral bullets represent the **SAME** enabled
+  set as the route rows. A single-pack install MUST drop the non-selected pack's
+  deferral bullet; otherwise the coordinator would defer to a pack instruction
+  file (`agent-engram.instructions.md` or `kbdb.instructions.md`) that was never
+  installed — a broken cross-reference. The verifier fails when the deferral set
+  and the enabled set diverge:
+
+  ```html
+  <!-- BEGIN:capability-pack-deferral -->
+  <!-- defer:{id} -->
+  <!-- END:capability-pack-deferral -->
+  ```
+* Preserve all four safeguard-invariant markers verbatim:
+  `<!-- safeguard:pack-deferral -->`, `<!-- safeguard:direct-search-exemptions -->`,
+  `<!-- safeguard:per-phase-health-reuse -->`, `<!-- safeguard:internal-no-public-web -->`.
+* Keep `applyTo: '**'` and resolve every `{{VARIABLE}}` before recording the checksum.
+* Record the artifact in the manifest with its EOL-normalized (LF) content
+  checksum; the verifier normalizes `\r\n` to `\n` before hashing so CRLF/LF
+  checkout differences are not misreported as tampering, and it FAILS (not warns)
+  on a missing/empty/mismatched checksum.
+* When **no** retrieval-enforced pack is selected, do NOT install the file. If a
+  prior install left the file (or its manifest entry) behind after the packs were
+  removed, remove both — a present file with no enabling pack is an orphaned
+  overlay and the verifier fails on it.
+
+**Verification checks** (installation-time):
+* `capability-pack-enforcement.instructions.md` present when ≥1 retrieval-enforced pack is enabled, absent otherwise
+* route rows equal exactly the enabled retrieval-enforced set
+* deferral bullets equal exactly the enabled retrieval-enforced set (kept in sync with the route rows)
+* all four safeguard markers present; `applyTo: '**'`; no unresolved `{{VARIABLE}}`
+* manifest `artifacts[]` records the file with an EOL-normalized (LF) content checksum matching the installed file
+
+**Tuning drift checks**:
+* coordinator checksum vs. installed file (mismatch → user-modified or un-refreshed manifest)
+* route rows vs. currently enabled retrieval-enforced pack set (drift when a pack is added/removed without re-rendering)
+* deferral bullets vs. route rows / enabled set (drift when a pack is added/removed without re-rendering the deferral block)
+* orphaned coordinator (file present, no retrieval-enforced pack enabled) → remove
+* `retrievalEnforcedPacks` in `internal/verifyworkspace/verify.go` vs. `retrieval_enforced: true` set in the registry data
+* `targeted_checks.model_routing_escalation` and `targeted_checks.escalation_chain_directive_parity` in `VerifyWorkspaceMap` (`internal/verifyworkspace/verify.go`) pass across both self-installs and ordinary consumer workspaces (via external `GSDHome` / `bundle.Bundle` templates)
+
+Example overlay target map for `browser-verification`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Browser workflow rules | foundation docs, `browser-verification.instructions.md` |
+| Automation skill | `browser-automation/SKILL.md` — treated as an explicit overlay target, not an optional add-on |
+| Verification discipline | `runtime-verification/SKILL.md`, closure-facing skills |
+| Human checkpoints | runtime verification and closure artifacts that mention external flows |
+
+Example overlay target map for `continuous-learning`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Observation capture rules | foundation docs, `continuous-learning.instructions.md` |
+| Observation lifecycle | `observe/SKILL.md`, `learn/SKILL.md`, `evolve/SKILL.md` |
+| Learned-artifact promotion | tuning / maintenance guidance and explicit `learned-*` artifact pathways |
+
+Example overlay target map for `strict-safety`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Action contract | foundation docs, `strict-safety.instructions.md`, `safety-modes/SKILL.md` |
+| Risky-plan legibility | `_stage.agent.md`, `impl-plan/SKILL.md`, `plan-harden/SKILL.md`, `plan-review/SKILL.md` |
+| Approval / rollback visibility | review, runtime-verification, and operational-closure workflows |
+
+Example overlay target map for `release-observability`:
+
+| Overlay Element | Required Targets |
+|---|---|
+| Monitoring plan discipline | foundation docs, `release-observability.instructions.md`, `operational-closure/SKILL.md` |
+| Rollback trigger requirements | `operational-closure/SKILL.md`, `runtime-verification/SKILL.md` |
+| Observation windows | closure-facing skills and PR lifecycle handoff sections |
+
+Runtime validator structural contract:
+
+* workspace-profile.yaml contains `runtime_validation.validator_manifest`, `runtime_validation.validation_expectations`, and `runtime_validation.releasability`
+* _ship.agent.md references validator evidence and releasability evidence handoff
+* runtime-verification/SKILL.md emits validator evidence with surface adapters, probe hints, manual checkpoint evidence, and verdict
+* operational-closure/SKILL.md converts validator evidence into releasability evidence
+
+Map primitives to template groups:
+
+| Primitive | Template Groups |
+|---|---|
+| 1 - State & Context | `agents/stage` (session continuity), `agents/ship` (session continuity), `agents/research/learnings-researcher`, `skills/compact-context`, `skills/compound`, `skills/compound-refresh`, `skills/harness-doctor` (install health baseline and pre-flight context), `instructions/context-efficiency` |
+| 2 - Task Granularity | Embedded in `foundation/AGENTS.md`, `agents/stage` |
+| 3 - Model Routing | Embedded in `foundation/AGENTS.md`, all agent definitions |
+| 4 - Orchestration | `agents/stage`, `agents/ship`, `agents/orchestrator`, `skills/deliberate`, `skills/brainstorm`, `skills/grill-me`, `skills/gsd-show-dag-queue`, `skills/gsd-dark-mode`, `skills/spike`, `skills/impl-plan`, `skills/plan-harden`, `skills/build-feature`, `skills/fix-ci`, `skills/harvest`, `skills/pr-lifecycle`, `skills/harness-architect`, `skills/shipment-reconcile` (when `{{FEATURE_SHIPMENTS}}` is true), `prompts/feature-flow`, `prompts/feature-flow-parallel` (P-016 planning-overlap alias, not parallel implementation), `prompts/feature-flow-dark` (P-017 exact-trigger shim), `prompts/gsd-show-dag-queue`, `prompts/gsd-dark-mode` |
+| 5 - Guardrails | `foundation/constitution`, `policies/workflow-policies`, `foundation/AGENTS.md`, `skills/safety-modes`, `skills/file-lock`, `skills/harness-doctor` (MCP pre-flight, tool availability gate, P-016 topology awareness, and P-017 dark-mode gate awareness), `instructions/circuit-breaker`, `instructions/concurrency`, `instructions/strict-safety` (core) |
+| 6 - Injection Points | `instructions/*`, including `instructions/output-timestamps`, `foundation/copilot-instructions`, `skills/skill-search` |
+| 7 - Observability | `agents/review/*`, `skills/review`, `skills/plan-review`, `instructions/output-timestamps` |
+| 8 - Workflow Policy | `policies/workflow-policies` |
+| 9 - Repo Knowledge | `foundation/AGENTS.md` (progressive disclosure), `instructions/architecture-doc` |
+| 10 - Operational Closure | `skills/runtime-verification`, `skills/operational-closure`, PR and CI handoff sections in pipeline templates |
+
+### Phase 2: Template Composition
+
+#### Step 2.0: Resolve Layer Scope
+
+Use `install_layers` as the explicit artifact-class composition contract for the
+selected preset and overlays:
+
+| Install Layer | Primary Phase 2 Targets |
+|---|---|
+| `foundation` | Step 2.1 |
+| `instructions` | Step 2.2 |
+| `workflow` | Step 2.4, Step 2.5, Step 2.6, Step 2.7 |
+| `review` | Review personas plus `review` / `plan-review` routing in Step 2.4 and Step 2.5 |
+| `runtime` | `runtime-verification`, `operational-closure`, and runtime-facing handoff text |
+| `backlog` | Step 2.2 backlog integration plus Step 2.3 and Step 2.8 |
+| `knowledge` | Docs-root conventions, compound/memory/closure/plans structure |
+| `overlays` | Capability-pack instruction files and woven overlay target updates |
+
+Stack packs influence why layers are present and which overlays are recommended,
+but they do not replace the layer contract itself.
+
+#### Step 2.1: Foundation Layer
+
+Generate the constitutional foundation first, as all other artifacts reference it:
+
+1. **Constitution** (`constitution.instructions.md`): Adapt principles for the target technology. Replace language-specific rules (e.g., `unsafe` code policy becomes TypeScript strict mode, Python type-hint enforcement, etc.). Preserve all 10 universal principles (I–X).
+
+2. **AGENTS.md**: Generate the root AGENTS.md with technology-specific quality gates, code style conventions, error handling patterns, and terminal command policies.
+
+3. **copilot-instructions.md**: Generate shared development guidelines with project structure, commands, and conventions.
+
+If the `agent-engram` capability pack is enabled, weave the engram-first search operating model into both files so indexed lookup, workspace binding, and freshness / fallback behavior become part of the normal harness narrative.
+
+When browser-visible UI flows exist, weave browser
+verification discipline into both files so server readiness, route selection,
+headed/headless choice, and human-checkpoint expectations become part of the
+normal harness narrative.
+
+As a core protocol, weave recurring-practice
+capture into both files so observation storage, evidence-backed instincts, and
+promotion into explicit learned artifacts become part of the normal harness
+narrative.
+
+For elevated-risk work, weave explicit risky-action
+classification into both files so `ProposedAction`, `ActionRisk`, approval, and
+`ActionResult` language becomes part of the normal harness narrative.
+
+For runtime-affecting release units, weave monitoring plan,
+pre-deploy audit, observation window, and rollback trigger expectations into both
+files so structured release confidence becomes part of the normal harness narrative.
+
+#### Step 2.2: Instruction Layer
+
+Generate instruction files. These use `applyTo` patterns to scope their rules:
+
+1. **Technology instructions** (`{language}.instructions.md`): Language-specific coding conventions, error handling, naming, documentation standards. Use the language-specific variant template when available (`technology-go.instructions.md.tmpl`, `technology-typescript.instructions.md.tmpl`, `technology-python.instructions.md.tmpl`, `technology-rust.instructions.md.tmpl`). Fall back to the generic `technology.instructions.md.tmpl` skeleton for languages without a variant.
+
+2. **Universal instructions** (no technology adaptation needed):
+   * `commit-message.instructions.md` — Adapt scopes to match workspace directory structure
+   * `markdown.instructions.md` — Universal (install as-is with minimal adaptation)
+   * `writing-style.instructions.md` — Universal (install as-is)
+   * `coding-discipline.instructions.md` — Behavioral coding guardrails: think before coding, simplicity first, surgical changes, and goal-driven verification. Universal (install as-is).
+   * `git-merge.instructions.md` — Universal (install as-is)
+   * `pull-request.instructions.md` — Universal (install as-is)
+   * `shipment-documentation-audit.instructions.md` — Universal (install as-is): the single normative source for the per-shipment documentation consistency audit that the Ship agent, operational-closure, pr-lifecycle and the pull-request instruction reference. Technology-agnostic and introduces no new variables. Always install it wherever Ship, operational-closure or pr-lifecycle is installed, regardless of preset.
+   * `prompt-builder.instructions.md` — Universal (install as-is)
+   * `circuit-breaker.instructions.md` — Anti-spinning protocol with retry thresholds, escalation, error logging, and a below-threshold cooldown delay with no auto-reset or post-trip probe. Universal (install as-is). Resolve `{{CIRCUIT_BREAKER_COOLDOWN}}` with default `5 minutes`. Referenced by the constitution's Stop Conditions section.
+   * `concurrency.instructions.md` — File operation locking protocol for multi-agent and human+agent concurrency control. Universal (install as-is). Requires the `file-lock` skill scripts to be installed alongside.
+   * `architecture-doc.instructions.md` — Progressive disclosure and architecture documentation rules (Primitive 9)
+   * `context-efficiency.instructions.md` — Context window hygiene: tool result offloading, committed change eviction, and proactive compaction triggers (Primitive 1). Universal (install as-is).
+   * `output-timestamps.instructions.md` — Operator-visible timestamp discipline for phase transitions and long-running operations (Primitive 6 / Primitive 7). Universal (install as-is). Uses a fixed ISO-8601 UTC + delta format, so no variable-resolution-table entry is required.
+   * `ci-security.instructions.md` — CI/CD security and hygiene conventions. Adapt `{{CI_WORKFLOW_GLOB}}` to match the workspace CI platform (e.g., `**/.github/workflows/*.yml` for GitHub Actions). Install when the workspace uses a CI system detected during discovery.
+   * `workflows.instructions.md` — CI/CD workflow structural conventions (job naming, artifacts, caching, matrix, reusable workflows). Install alongside `ci-security.instructions.md` when a CI system is detected.
+   * `github-pr-automation.instructions.md` — GitHub-specific PR automation: local-review readiness verification, optional Copilot shadow-review lifecycle during migration, and CI check monitoring with back-off polling. Install when the workspace is hosted on GitHub (git remote contains `github.com` or `{{CI_PLATFORM}}` is `GitHub Actions`). Resolves `{{REPO_OWNER}}` and `{{REPO_NAME}}` from the git remote URL.
+   * `copilot-code-review.instructions.md` — GitHub Copilot code-review focus guidance: directs the code-review agent to high-value defects (logic, security, secret exposure, injection, error handling, concurrency, data-loss, high blast radius) and de-prioritizes only the mechanical/process nits the harness already enforces, while flagging weakened-enforcement changes. Frontmatter carries `applyTo: '**'` and `excludeAgent: 'cloud-agent'`, which keeps the file out of GitHub's autonomous cloud coding agent so review-only guidance never conflicts with the coding agent's build mandate. Because `excludeAgent` only distinguishes the cloud coding agent from code review (Copilot CLI and IDE Chat may still load path-scoped instruction files), the body opens with a self-gating applicability guard so non-review surfaces ignore it. Install when the workspace is hosted on GitHub (git remote contains `github.com` or `{{CI_PLATFORM}}` is `GitHub Actions`). Resolves `{{PROJECT_NAME}}` and `{{HARNESS_ENFORCED_SUMMARY}}`. Because Copilot code review reads instructions from the pull request's **base branch**, the installing pull request is validated structurally only. **Write discipline** (standard instruction Phase 3 mechanics): generate the file from `copilot-code-review.instructions.md.tmpl` when it is absent; on a **fresh install** with an existing copy, back up the original before overwriting (never blind-clobber operator edits); on a **merge install**, keep the existing file and only add it when missing; in **self-install mode** `.github/instructions/` is neither backed up nor overwritten (see the elective agents' Step 2). In every mode, record the installed artifact's path, template, and checksum in the harness manifest (Step 3.3 `artifacts:` list) so tune can detect drift or a user-removed file.
+   * `mcp-server.instructions.md` — MCP server development conventions. Install when workspace-discovery detects an MCP server project (MCP SDK in dependencies). Resolves `{{MCP_SDK}}`, `{{MCP_TRANSPORT}}`, `{{MCP_PROJECT_STRUCTURE}}`.
+
+3. **Backlog integration instructions** (`backlog-integration.instructions.md`): Generated from the backlog tool registry. Maps abstract operations to the specific tool's MCP names and CLI commands. Only generated when a backlog tool is detected or registered.
+
+4. **Capability-pack instructions**: When `agent-engram` is enabled, install `agent-engram.instructions.md` and use it as the authoritative reference for engram-first search, workspace binding, index freshness, and indexed-search fallback workflows.
+   When `backlogit` is enabled, install `backlogit.instructions.md`, `backlogit-sql-schema.instructions.md`, and `backlogit-yaml-header-tooling.instructions.md` and use them as the authoritative references for backlogit-native query, queue, dependency, memory, checkpoint, comment, traceability, SQL lookup, YAML frontmatter coverage, and source-artifact-cleanup workflows.
+   Core protocol (always installed): install `browser-verification.instructions.md` and use it as the authoritative reference for browser-ready server checks, route selection, headed/headless choice, and human checkpoints.
+   Core protocol (always installed): install `continuous-learning.instructions.md` and use it as the authoritative reference for observation capture, instinct formation, and learned-artifact promotion.
+   Core protocol (always installed): install `strict-safety.instructions.md` and use it as the authoritative reference for `ProposedAction`, `ActionRisk`, `ActionResult`, approval routing, and risky-work legibility.
+   Core protocol (always installed): install `release-observability.instructions.md` and use it as the authoritative reference for monitoring plans, pre-deploy audits, observation windows, and rollback trigger discipline.
+   Core protocol (always installed): install `adversarial-review.instructions.md` and use it as the authoritative reference for multi-model dispatch, consensus assembly, confidence tiers, and remediation queue structure.
+   When `kbdb` is enabled, install `kbdb.instructions.md` and use it as the
+   authoritative reference for indexed local documentation search, semantic
+   retrieval, doc-graph traversal, and server lifecycle workflows. Resolve
+   `{{KBDB_SOURCES_PATH}}` from `kbdb.sources_path` (legacy
+   `graphtor_docs.sources_path`; default `.kbdb/config/sources.yaml`).
+   Resolve `{{KBDB_BINARY_PATH}}` from the same workspace, preferring
+   `.bin/kbdb(.exe)` and treating PATH, `.kbdb/bin/`, and `graphtor` as
+   compatibility fallbacks.
+
+5. **Two-agent model instructions** (conditional — auto-detected): When both `_stage.agent.md` and `_ship.agent.md` are being installed (indicating the two-agent Stage/Ship workflow model), install `role-enforcement.instructions.md` from `role-enforcement.instructions.md.tmpl`. This instruction defines the pre-mutation check protocol that teaches each agent to self-check against its own `## Role Boundary (NON-NEGOTIABLE)` table before executing tool calls. Skip this instruction when only one agent (or neither) is installed — role enforcement is only meaningful in the two-agent model.
+
+6. **Escalation protocol instruction** (conditional — either-agent auto-detected, P-013.6 / F02FD596): When `_stage.agent.md` **or** `_ship.agent.md` is being installed (either agent, not both required — this is distinct from the two-agent-only `role-enforcement.instructions.md` gate in item 5 above), install `escalation-protocol.instructions.md` from `escalation-protocol.instructions.md.tmpl`. This instruction defines the telemetry-driven auto-escalation payload contract (threshold-kind + count, failure summary, last-N action/observation refs, artifact refs, telemetry-evidence pointers, resumption checkpoint ref), the authority-preservation invariant (reasoning escalation only, never authority escalation), the nested per-role escalation precedence (`<role>.escalation` → legacy flat `escalation` (DEPRECATED) → tier3 per-field fallback, with both-present AMBIGUOUS fail-closed per H2), and the single canonical `ESCALATION_DEGRADED` definition (escalation route unavailable, OR engram unavailable, OR the acting role's own resolved escalation tuple equals that same role's own resolved role route — role-scoped same-route no-op, H3) referenced by both `_stage.agent.md` and `_ship.agent.md` rather than re-defined per template. Resolve `{{ESCALATION_PROVIDER}}`, `{{ESCALATION_FAMILY}}`, `{{ESCALATION_REASONING_EFFORT}}`, and `{{ESCALATION_CONTEXT_TIER}}` before rendering so no `{{...}}` placeholder remains unresolved in installed output. Skip this instruction only when neither Stage nor Ship is being installed.
+
+#### Step 2.3: Backlog Tool Registration
+
+If the workspace profile includes a detected backlog tool (`backlog_tool.detected: true`):
+
+If `tool_name` is `"manual"`: skip registry installation, generate minimal
+backlog structure (queue/, archive/), skip backlog MCP tool registration in
+agent definitions. Agents will use file-based backlog scanning only.
+
+Otherwise:
+
+1. **Copy the matching registry**: Load the pre-built registry from `{gsd_home}/templates/backlog/registries/{tool_name}.registry.yaml`
+2. **Override `directory` with the detected root before install**: the copied
+   registry's `directory` field (for example `.backlogit` in
+   `backlogit.registry.yaml`) is a static template default, not the
+   authoritative value for this workspace. Overwrite it with
+   `backlog_tool.directory` as detected in Step 1.6 of `workspace-discovery`
+   (`.backlog` for a backlogit 1.9.0+ default-root workspace, `.backlogit` for
+   a legacy-root workspace) before writing the installed file. Installing the
+   template's static default verbatim on a `.backlog`-root workspace would
+   silently point the installed registry (and everything that resolves
+   `registry.get("directory")` ahead of the harness-config fallback) at the
+   wrong directory.
+3. **Install as `.gsd/backlog-registry.yaml`** in the target workspace
+4. **Resolve backlog template variables** from the registry into all templates
+5. **Add the backlog MCP server** to the tools list in all agent definitions that interact with the backlog
+6. **Preserve the registry launcher runtime contract**: native-binary registries
+   (for example backlogit) use the workspace-local binary under `.bin/`;
+   JavaScript-engine registries (for example backlog-md) use the
+   workspace-local `.bin/bunx` launcher. Use `--bun` only when the specific package has been
+   verified to initialize under the Bun runtime; otherwise retain bare `bunx`
+   and document that Node may still be required because package shebangs can
+   delegate to Node. PATH lookup is legacy compatibility, not the preferred
+   dependency contract.
+
+If no backlog tool is detected:
+
+1. **Ask the user** if they want to register a backlog tool manually
+2. If yes, present the available registries (backlogit, backlog-md) and let them choose or provide a custom registry
+3. If no, skip backlog integration — agents will use manual `.backlog/` markdown files without tool integration
+4. Generate a minimal backlog structure regardless (`.backlog/` or tool-specific directory)
+
+If the user wants to use a tool not yet in the registry:
+
+1. Generate a skeleton registry from `{gsd_home}/schemas/backlog-tool-registry.schema.json`
+2. Present it to the user for completion
+3. Install the completed registry
+
+#### Step 2.4: Agent Layer
+
+Generate agent definitions. Each agent template has technology-specific sections that vary.
+
+**Deprecated agent exclusion**: Do not install agent templates from
+`{gsd_home}/templates/agents/deprecated/`. If an existing workspace
+contains deprecated agent files listed in AGENTS.md's deprecation table (during
+merge install), flag them for removal.
+
+**Legacy pipeline-agent standardization** (merge install): Before writing the
+canonical pipeline agents, detect existing agent files that drifted from the
+canonical identity (legacy filename, legacy `name:`, or an arbitrary rename that
+retains the stable `id:`) and standardize them onto the canonical version to be
+installed. The canonical identities are:
+
+| Canonical `id:` | Canonical filename | Canonical `name:` | Legacy filenames | Legacy `name:` |
+|---|---|---|---|---|
+| `gsd/pipeline/orchestrator` | `_orchestrator.agent.md` | `_Orchestrator` | `orchestrator.agent.md`, `dispatch.agent.md` | `Orchestrator`, `Dispatch` |
+| `gsd/pipeline/stage` | `_stage.agent.md` | `_Stage` | `stage.agent.md`, `.stage.agent.md` | `Stage`, `.Stage` |
+| `gsd/pipeline/ship` | `_ship.agent.md` | `_Ship` | `ship.agent.md`, `.ship.agent.md` | `Ship`, `.Ship` |
+
+`verify-workspace` emits these as `contract: agent-identity` migration proposals.
+Detection prefers the stable `id:` field: any agent file whose `id:` matches a
+canonical identity is standardized regardless of its current filename, so an
+arbitrarily renamed pipeline agent is still detected. Files without a matching
+`id:` fall back to the legacy filename/`name:` registry above. Every canonical
+pipeline agent installed carries its `id:` so future renames stay detectable.
+
+For each drifted pipeline agent found: back up the original, rename it to the
+canonical filename, set the canonical `name:` and `id:`, and update
+cross-references (AGENTS.md, other agents, skills, prompts, instructions,
+policies) plus the manifest artifact path — rather than leaving a stale file
+alongside the newly written canonical one. If both a canonical and a drifted file
+already exist, keep the canonical file and back up/remove the duplicate. Elective
+agents (`auto-mergeinstall`, `auto-tune`) and review/research agents are out of
+scope.
+
+1. **Pipeline agents**: stage, ship, orchestrator
+   * Adapt build/test/lint commands throughout
+   * Adapt quality gate sequences
+    * Adapt model routing tiers (preserve structure, adjust agent assignments if needed)
+    * If P-017 dark factory guidance is present, ensure dark-mode events (`DARK_MODE_START`, `DARK_MODE_SCOPE`, `BRAINSTORM_HANDOFF_READY`, `LOCAL_REVIEW_READY`, `DARK_MODE_MERGE_AUTHORIZED`, `ADMIN_FALLBACK_ATTEMPTED`, `DARK_MODE_HALTED`, `DARK_MODE_COMPLETE`) are reported as self-contained session-output summaries that include scope, decisions, brainstorm/requirements handoff state, gates, reviewed HEADs, outcomes, and next actions (the P-017 Dark Factory Visibility Protocol in `workflow-policies.md`).
+    * When `agent-engram` is enabled, add explicit workflow guidance for engram-first search, workspace binding/index verification, and code-graph or impact-analysis style diagnostics
+    * When `backlogit` is enabled, add explicit workflow guidance for queue-first work selection, dependency-aware planning, checkpoint persistence, and commit traceability
+    * Keep risky planning and approval vocabulary visible through stage, review, verification, and closure handoffs
+    * When runtime validation is in scope, ensure Ship, runtime-verification, and operational-closure carry `runtime_validation.validator_manifest`, `runtime_validation.validation_expectations`, validator evidence, and releasability evidence rather than report-oriented runtime notes
+    * For runtime-affecting release units, ensure operational-closure and runtime-verification carry monitoring plan, observation window, rollback trigger expectations, and releasability evidence requirements
+    * When `kbdb` is enabled, add explicit workflow guidance for indexed local documentation search using kbdb MCP tools (`search_local_docs`, `search_semantic`, `research_topic`) before falling back to broad filesystem or web search
+    * When both stage and ship agents are being installed (two-agent model), ensure both agent definitions contain a `## Role Boundary (NON-NEGOTIABLE)` section with Allowed/Forbidden tables. The role-enforcement instruction (Step 2.2, item 5) references these tables at runtime.
+
+2. **Support agents**: prompt-builder
+   * Minimal technology adaptation needed
+   * Adapt file path patterns for the workspace structure
+
+3. **Expert agent**: Generate a technology-specific expert agent (equivalent to `rust-engineer.agent.md` but for the target language). Name it `{language}-engineer.agent.md`.
+
+4. **Review personas**: Generate from review persona templates when the `review`
+   layer is active
+   * `architecture-strategist.agent.md` — Universal with domain adaptation
+   * `constitution-reviewer.agent.md` — References local constitution
+   * `correctness-reviewer.agent.md` — Always-on behavioral correctness reviewer
+   * `maintainability-reviewer.agent.md` — Always-on maintainability and complexity reviewer
+   * `scope-boundary-auditor.agent.md` → `.github/agents/subagents/scope-boundary-auditor.agent.md` — Universal
+   * `technology-reviewer.agent.md` → `.github/agents/subagents/{{PRIMARY_LANGUAGE_LOWER}}-reviewer.agent.md` — Fully technology-specific. **Co-installation invariant (Decision F1, MUST)** — see below.
+   * `concurrency-reviewer.agent.md` → `.github/agents/subagents/concurrency-reviewer.agent.md` — Include only for languages with concurrency primitives
+   * `agent-native-parity-reviewer.agent.md` → `.github/agents/subagents/agent-native-parity-reviewer.agent.md` — Include when `agent_native.recommended_reviewer` is true in the workspace profile
+   * `security-reviewer.agent.md` → `.github/agents/subagents/security-reviewer.agent.md` — Include when the `review` layer is active; universal security code review persona
+   * `security-lens-reviewer.agent.md` → `.github/agents/subagents/security-lens-reviewer.agent.md` — Include when the `review` layer is active; plan-level security review persona
+   * `template-integrity-reviewer.agent.md` → `.github/agents/subagents/template-integrity-reviewer.agent.md` — Include when the workspace produces template-driven or Markdown-heavy product surfaces so frontmatter, placeholder, markdown, and cross-reference defects are caught before PR submission
+   * `schema-cli-docs-coupling-reviewer.agent.md` → `.github/agents/subagents/schema-cli-docs-coupling-reviewer.agent.md` — Include when diffs commonly span schemas, CLI verification logic, install/tune flows, and operator docs
+   * `learnings-researcher.agent.md` → `.github/agents/subagents/learnings-researcher.agent.md` — Universal
+
+**Decision F — Technology-reviewer ↔ language-instruction co-installation invariant.** Three non-overlapping conditions, each with exactly one disposition:
+
+* **Condition A** (`PRIMARY_LANGUAGE={L}` declared AND the technology reviewer is selected) → **F1 co-installation (MUST)**: the matching `{L}.instructions.md` MUST be installed in the SAME composition — from the language-variant template `technology-{L}.instructions.md.tmpl` when one exists in the template set (first choice), otherwise from the generic `technology.instructions.md.tmpl` skeleton (fallback, only when no variant exists). If NEITHER template exists in the template set, the composition HALTS WITH A NAMED ERROR identifying both missing template paths — it does NOT silently drop the reviewer and does NOT silently install a dangling one.
+* **Condition B** (technology reviewer NOT selected) → the F1 rule does not fire. This is a statement about Decision F's own rule only: it is NOT a statement that no language instruction is installed. Step 2.2 item 1 installs `{language}.instructions.md` UNCONDITIONALLY as part of the Instruction Layer, independently of reviewer selection, and Decision F neither adds to nor suppresses that.
+* **Condition C** (an already-composed workspace carries a technology reviewer with no matching instruction) → **F2 graceful reference**: the source template `technology-reviewer.agent.md.tmpl` keeps the `{{PRIMARY_LANGUAGE_LOWER}}` placeholder (it is correct — this is what lets it resolve per-workspace); the INSTALLED reviewer (e.g. `{language}-reviewer.agent.md`) MUST contain that placeholder's RESOLVED value (e.g. `python`, matching the zero-unresolved-placeholder install invariant), plus an explicit fallback clause so it degrades to generic coding-discipline guidance instead of citing an absent file when composed without the matching instruction. F1 is forward, at composition time, and NOT retroactive — it governs what this skill does when composing a workspace; it does not recompose an existing workspace.
+
+The M1–M5 outcome matrix (each row is a required behavior, not merely a suggestion):
+
+| # | Condition | Template set state | Outcome |
+|---|---|---|---|
+| M1 | PRIMARY_LANGUAGE=L, reviewer selected | `technology-{L}.instructions.md.tmpl` exists (language variant) | F1 co-installation from the language-variant template |
+| M2 | PRIMARY_LANGUAGE=L, reviewer selected | Variant absent, generic `technology.instructions.md.tmpl` present | F1 co-installation from the generic skeleton (variant is always first choice; generic is used only when no variant exists) |
+| M3 | PRIMARY_LANGUAGE=L, reviewer selected | Neither variant nor generic skeleton present | HALT with a named error identifying both missing template paths — fail closed; the reviewer is not silently dropped and not installed dangling |
+| M4 | Technology reviewer NOT selected | any | The F1 rule does not fire (Condition B); Step 2.2 item 1's unconditional `{language}.instructions.md` install is untouched by this scoping |
+| M5 | Already-composed workspace carrying a technology reviewer with no matching instruction | n/a (no composition runs) | F2 graceful reference: the reviewer degrades to generic coding-discipline guidance with no unconditional reference to an absent instruction file |
+
+5. **Orchestrating review skills**: `plan-review/SKILL.md`, `review/SKILL.md` — dispatch persona subagents during plan and code review at subagent depth 1. Install when the `review` layer is active. Ensure `review/SKILL.md` produces a local review readiness outcome (`READY`, `READY_WITH_FOLLOWUPS`, `BLOCKED`) and routes residual P2/P3 findings into explicit follow-up handling. `adversarial-review.agent.md` is a standalone agent at depth 2 (dispatches multiple parallel reviewer instances).
+   * Minimal technology adaptation needed
+   * Install as skills (not agents)
+
+6. **Security agent**: `security-sentinel.agent.md` — User-invocable security audit agent. Install when Primitive 5 or Primitive 7 is selected.
+
+#### Step 2.5: Skill Layer
+
+Generate skill files:
+
+1. **Technology-adapted skills**:
+   * `build-feature/SKILL.md` — Adapt test runner commands, compilation checks, stall timeouts
+   * `fix-ci/SKILL.md` — Adapt CI pipeline order, tool-specific fix strategies
+   * `impl-plan/SKILL.md` — Adapt execution postures for the technology
+
+2. **Universal skills** (minimal adaptation; install only when their governing primitives are selected):
+    * `deliberate/SKILL.md`
+    * `brainstorm/SKILL.md` — Install when Primitive 4 is selected. Front-door requirements-intake skill that complements `deliberate` and hands a requirements artifact to `impl-plan`.
+    * `grill-me/SKILL.md` — Install when Primitive 4 is selected. Front-door Socratic design-tree frontier interview and intent-engineering skill (GROUND -> ELICIT -> CRYSTALLIZE) that makes operator intent and runnable objective acceptance checks explicit before `brainstorm`, `deliberate`, or `impl-plan`.
+    * `gsd-show-dag-queue/SKILL.md` — Install when Primitive 4 is selected. Read-only, eligible-only, capability-oriented DAG pipeline readiness and operator choice view.
+    * `gsd-dark-mode/SKILL.md` — Install when Primitive 4 and P-017 are selected. Bounded P-017 Stage & Ship dark-factory methodology skill (shipment sequences/sets, pre-PR multi-persona + `rubber-duck` review, carry-forward handling, patient Copilot polling, and GraphQL thread resolution).
+    * `spike/SKILL.md`
+    * `plan-harden/SKILL.md` — Install when Primitive 4 is selected so risky plans can be strengthened before review
+    * `compact-context/SKILL.md`
+    * `compound/SKILL.md`
+   * `compound-refresh/SKILL.md` — Install when Primitive 1 is selected so the workspace can maintain stale or overlapping institutional learnings over time
+   * `harness-architect/SKILL.md` — Install when Primitive 4 is selected. Adapts test patterns, failure markers, and file placement for `{{PRIMARY_LANGUAGE}}`
+   * `harvest/SKILL.md` — Install when Primitive 4 is selected. Resolves backlog tool variables from the registry
+   * `pr-lifecycle/SKILL.md` — Install when Primitive 4 is selected. Language-agnostic; uses `gh` CLI
+   * `safety-modes/SKILL.md` — Install when Primitive 5 is selected
+    * `file-lock/SKILL.md` — Install when Primitive 5 is selected. Provides `scripts/acquire_lock.ps1`, `scripts/acquire_lock.sh`, `scripts/release_lock.ps1`, and `scripts/release_lock.sh` for file-level concurrency control. Copy all scripts from `{gsd_home}/templates/skills/file-lock/scripts/` into `{workspace_path}/scripts/`.
+    * `skill-search/SKILL.md` — Install when Primitive 6 is selected. Provides `scripts/search.ps1` and `scripts/search.sh` for dynamic on-demand skill discovery. Copy all scripts from `{gsd_home}/templates/skills/skill-search/scripts/` into `{workspace_path}/scripts/`.
+    * `security-audit/SKILL.md` — Install when Primitive 5 or Primitive 7 is selected. Resolves security surface variables: `{{AGENTIC_CONFIG_GLOB}}`, `{{SOURCE_GLOB}}`, `{{PRIMARY_LANGUAGE}}`, `{{DOCS_SECURITY}}`, `{{SECURITY_CONFIG_RULES}}`, `{{SECURITY_OWASP_PATTERNS}}`.
+    * `runtime-verification/SKILL.md` — Install when the `runtime` layer is active (normally because Primitive 10 is selected)
+    * `operational-closure/SKILL.md` — Install when the `runtime` layer is active (normally because Primitive 10 is selected)
+    * `observe/SKILL.md`, `learn/SKILL.md`, `evolve/SKILL.md` — Core skills; install with the core harness
+    * `browser-automation/SKILL.md` — Core skill; install with the core harness. Resolves browser variables: `{{BROWSER_CLI}}`, `{{BROWSER_HEADLESS_FLAG}}`. This is a core skill, not an optional add-on.
+    * `iterative-experiment/SKILL.md` — Install when the `workflow` layer is active. Resolves experiment variables: `{{EXPERIMENT_BRANCH_PREFIX}}`, `{{EXPERIMENT_RESULTS_DIR}}`.
+
+3. **Always-installed skills** (install with every preset, regardless of primitive or layer selection):
+    * `harness-doctor/SKILL.md` — Universal health diagnostic; install with every preset. Resolves health-check variables: `{{HARNESS_MANIFEST_PATH}}`, `{{GSD_VERSION}}`.
+
+When `agent-engram` is enabled, weave indexed-search guidance into research, planning, build, and repair skills rather than treating it as a generic footnote.
+
+Install `browser-automation/SKILL.md` as a core skill and weave browser-specific guidance into runtime verification and operational closure rather than leaving browser work as an implicit manual step.
+
+Install and reference the observation
+lifecycle skills rather than relying on invisible prompt behavior.
+
+Weave the strict-safety action contract through `plan-harden`,
+`safety-modes`, review, and closure skills rather than treating it as a
+single isolated instruction file.
+
+Weave monitoring plan and rollback trigger
+expectations through `runtime-verification` and `operational-closure` rather than
+treating release-observability as a standalone instruction file.
+
+When `kbdb` is enabled, weave indexed documentation retrieval guidance into
+research, planning, and knowledge-retrieval workflows. Agents should resolve domain
+concepts, API references, and architectural context from kbdb indexed sources
+before falling back to broad web search or raw filesystem scan.
+
+#### Step 2.6: Policy Layer
+
+Generate the workflow policy registry from `workflow-policies.md.tmpl`:
+
+* P-001 (Single-Release-Unit Completion) — Universal
+* P-002 (TDD Gate) — Adapt test commands and red-phase detection
+* P-003 (Decomposition Chain) — Universal
+* P-004 (Red Phase Before Implementation) — Adapt compilation and test failure detection
+* P-005 (Policy Violation Telemetry) — Universal
+* P-006 (Plan Hardening Gate) — Universal
+* P-007 through P-015 — Universal backlog, markdown, merge, role, branch, tool, tier, review-readiness, and shipment-closure policies
+* P-016 (No Parallel Branch/Worktree Execution) — Universal. Preserve the Stage spike/research worktree exception and ensure generated Stage, Ship, Orchestrator, AGENTS.md, and concurrency guidance do not endorse parallel implementation branches/worktrees.
+* P-017 (Dark Factory Autonomy Contract) — Universal when dark-mode prompts or guidance are installed. Preserve the exact trigger, bounded scope, local-review-first readiness, merge/admin fallback fail-closed behavior, telemetry events, and closure evidence requirements.
+
+The full-build PR gate is a cross-cutting Agent / Skill / Instruction-layer
+requirement rather than a numbered workflow policy. Ensure Ship, pr-lifecycle,
+and GitHub PR automation guidance require a successful full local build before
+any code-changing PR is created, updated, or presented, with explicit
+non-applicability allowed only for documentation-only/backlog-only PRs.
+
+#### Step 2.7: Prompt Layer
+
+Generate prompt files:
+
+* `feature-flow.prompt.md` — Install when Primitive 4 is selected. User-facing alias to the Orchestrator's standard sequential full-cycle routing.
+* `feature-flow-parallel.prompt.md` — Install when Primitive 4 is selected. User-facing alias to the Orchestrator's pipelined full-cycle routing preference, now constrained to P-016-compliant planning overlap; it must degrade to sequential execution when overlap would create parallel implementation branches/worktrees.
+* `feature-flow-dark.prompt.md` — Install when Primitive 4 and P-017 are selected. User-facing shim for the exact `Run pipeline in dark mode` trigger; it must route through Orchestrator, record `DARK_MODE_ACTIVE`, preserve P-001/P-009/P-014/P-016/P-017, and never bypass local readiness, required checks, telemetry, or closure gates.
+* `gsd-show-dag-queue.prompt.md` — Install when Primitive 4 is selected. User-facing prompt shim for `/gsd-show-dag-queue`, routing through Orchestrator and `gsd-show-dag-queue/SKILL.md`.
+* `gsd-dark-mode.prompt.md` — Install when Primitive 4 and P-017 are selected. User-facing prompt shim for `/gsd-dark-mode`, routing bounded shipment sequences/sets through Orchestrator and `gsd-dark-mode/SKILL.md`.
+
+#### Step 2.8: Backlog Structure
+
+Initialize the backlog directory. Backlog tools are used **exclusively for workflow management** — active work items live in `queue/`, completed items move to `archive/`. Long-lived knowledge artifacts (compound learnings, plans, decisions, memory, closure records) are stored in `{{DOCS_ROOT}}/` at the workspace root, not in the backlog.
+
+```text
+{{BACKLOG_DIRECTORY}}/
+  config.yml          # Backlog tool configuration (prefix map, statuses, labels)
+  queue/              # Active work items — flat directory, no subdirectories
+    .stash.md         # Parked ideas and deferred outcomes not yet promoted
+  archive/            # Completed and archived work items
+```
+
+Work items in `queue/` follow the naming convention:
+
+```text
+{NNN}-{suffix}-{slug}.md               # Level 1 (features, chores, epics)
+{NNN}.{NNN}-{suffix}-{slug}.md         # Level 2 (tasks, sub-epics)
+{NNN}.{NNN}.{NNN}-{suffix}-{slug}.md   # Level 3 (subtasks)
+```
+
+The suffix map is configured in `config.yml` with concrete single or two-letter defaults:
+
+| Type | Suffix | Example filename |
+|---|---|---|
+| Feature | `{{SUFFIX_FEATURE}}` | `001-F-user-auth.md` |
+| Chore | `{{SUFFIX_CHORE}}` | `002-C-python-312-migration.md` |
+| Task | `{{SUFFIX_TASK}}` | `001.001-T-add-login-endpoint.md` |
+| Spike | `{{SUFFIX_SPIKE}}` | `002-S-evaluate-caching.md` |
+| Deliberation | `{{SUFFIX_DELIBERATION}}` | `003-D-api-strategy.md` |
+| Bug | `{{SUFFIX_BUG}}` | `004-B-null-pointer-fix.md` |
+| Epic | `{{SUFFIX_EPIC}}` | `005-E-auth-overhaul.md` |
+| Subtask | `{{SUFFIX_SUBTASK}}` | `001.001.001-ST-write-unit-test.md` |
+
+Suffix values are resolved from: (1) operator `.gsd/config.yaml` → (2) backlogit project YAML (when active) → (3) schema defaults (F, C, T, S, D, B, E, ST). The resolved values are written into both `config.yml` and `.gsd/config.yaml` at installation time.
+
+Long-lived knowledge structure (full paths at workspace root):
+
+```text
+{{DOCS_ROOT}}/          # Documentation root
+{{DOCS_COMPOUND}}/      # Institutional learnings organized by category
+{{DOCS_PLANS}}/         # Implementation plans (compacted: plan + reviews → decided-plan)
+{{DOCS_DECISIONS}}/     # ADRs and deliberation outcomes
+{{DOCS_MEMORY}}/        # Session state and checkpoints
+{{DOCS_CLOSURE}}/       # Runtime verification, code review, safety-check, and closure records
+```
+
+Reviews are appended to the plan they review (not separate files). The compact-context skill consolidates plan + appended reviews into a decided-plan.
+
+#### Step 2.9: Startup Scripts
+
+Generate workspace-root startup scripts from `{gsd_home}/templates/scripts/`:
+
+1. **`start.ps1`** (from `start.ps1.tmpl`) — self-contained PowerShell startup script; loads `.env.local`, sets `COPILOT_HOME`/`ENGRAM_DATA_DIR` and other AI tool env vars to workspace-local directories, resolves GitHub tokens, runs the enabled sidecar syncs (backlogit/Engram/kbdb), then launches the selected AI CLI tool -- all natively in this one PowerShell host, with no delegation to any other process for bootstrap or launch.
+2. **`start.sh`** (from `start.sh.tmpl`) — Bash equivalent. Set execute permission after install: `chmod +x start.sh`.
+
+Both scripts redirect AI tool state to workspace-local hidden directories (`.copilot`, `.claude`, etc.) so that agent memories, checkpoints, and database files are git-visible and project-scoped rather than shared across all workspaces. Sections for GitHub Copilot CLI, Claude Code, and OpenAI Codex are included; only the relevant section is active — the others are commented out for reference.
+
+**Why fully self-contained, not delegated to a helper process:** an earlier design delegated bootstrap/sidecar-sync/launch to a separate process (a Python `gsd run` command). That intermediate process changed how many processes were attached to the console at launch time, which broke mouse/scroll handling in the launched interactive CLI on Windows (empirically verified). Keeping all of bootstrap, sidecar sync, and launch native and in-process in the startup script itself avoids that entire class of problem, matching how the script behaved before that design was tried.
+
+Resolve `{{COPILOT_EXE_PATH}}`:
+- From `config.ai_tools.copilot_cli.exe_path` if present in `.gsd/config.yaml`
+- Otherwise prefer `<workspace>/.bin/copilot(.exe)` when present
+- Otherwise retain the schema default `copilot` as explicitly labeled legacy
+  PATH compatibility
+
+Resolve `{{COPILOT_CLI_ARGS_PS1}}`/`{{COPILOT_CLI_ARGS_SH}}` from `config.ai_tools.copilot_cli.args`
+if present (each entry rendered as a quoted array-literal element in the target
+script's own syntax), otherwise empty.
+
+Resolve `{{ENABLED_SIDECARS_PS1}}`/`{{ENABLED_SIDECARS_SH}}` by mapping each capability
+pack selected for this install to its sidecar name (rendered as quoted array-literal
+elements in the target script's own syntax): `backlogit` -> `"backlogit"`, `agent-engram`
+-> `"engram"`, `kbdb` -> `"kbdb"` (a legacy `graphtor-docs` pack also maps to `"kbdb"`). A pack not selected contributes no
+entry, so the startup script skips that sidecar's sync entirely rather than probing
+for a tool the workspace deliberately does not use.
+
+Also generate the workspace-local environment file:
+
+3. **`.env.local`** (from `.env.local.tmpl`) — gitignored per-developer environment
+   file. Resolve `{{WORKSPACE_ROOT}}` to the absolute workspace root path
+   (`profile.workspace_path`) and `{{PROJECT_NAME}}` as usual. It seeds
+   `workspaceFolder={{WORKSPACE_ROOT}}` plus space for secrets and per-developer
+   overrides. The `start.ps1` / `start.sh` scripts load this file at launch and
+   export each `KEY=VALUE` line as a process environment variable, but only when
+   that variable is not already set.
+
+   **Preserve existing secrets:** write `.env.local` only when it does not already
+   exist at the workspace root. If it exists, leave it untouched (it may hold
+   developer secrets). Confirm the workspace `.gitignore` ignores `.env.local`
+   (the `.env.*` pattern, excluding `.env.example`) so it is never committed.
+
+   **KBDB block (`{{KBDB_ENV_BLOCK}}`):** when the `kbdb`
+   capability pack is selected (`{{KBDB_ENABLED}}` is `true`), resolve
+   `{{KBDB_ENV_BLOCK}}` to a `KBDB_EMBED_MODEL_DIR={{KBDB_EMBED_MODEL_DIR}}`
+   entry (preceded by a blank line and a short comment). Resolve
+   `{{KBDB_EMBED_MODEL_DIR}}` from operator/profile `kbdb.embed_model_dir`
+   when set, otherwise default to `{{WORKSPACE_ROOT}}` joined with
+   `.kbdb/models/all-MiniLM-L6-v2` using the workspace-native path separator.
+   When the pack is not selected, resolve `{{KBDB_ENV_BLOCK}}` to an empty
+   string. If kbdb is added to an existing workspace during a later tune
+   and `.env.local` already exists without a `KBDB_EMBED_MODEL_DIR` line, append
+   the entry rather than overwriting the file.
+
+### Phase 3: Installation
+
+#### Step 3.1: Staging
+
+If `dry_run` is true, write all artifacts to `.gsd/staging/`, then run deterministic compatibility verification with:
+
+```text
+gsd verify-workspace --workspace {workspace_path}
+```
+
+The command writes JSON and Markdown reports into `.gsd/staging/` describing schema blockers, unresolved placeholders, staged render output, and targeted overlay checks. Report those paths and halt here without mutating the installed harness.
+
+#### Step 3.2: Write Artifacts
+
+Write generated artifacts to the target workspace. Use the following directory mapping:
+
+| Source Template Group | Target Location |
+|---|---|
+| Foundation / AGENTS.md | `{workspace}/AGENTS.md` |
+| Foundation / copilot-instructions.md | `{workspace}/.github/copilot-instructions.md` |
+| Foundation / constitution | `{workspace}/.github/instructions/constitution.instructions.md` |
+| Instructions | `{workspace}/.github/instructions/` |
+| Agents | `{workspace}/.github/agents/` — top-level agents (Orchestrator, Stage, Ship, Auto-MergeInstall, Auto-Tune) |
+| Subagents | `{workspace}/.github/agents/subagents/` — all non-top-level agents: review personas, researchers, language-engineer, prompt-builder, adversarial-review, security-sentinel |
+| Skills | `{workspace}/.github/skills/{name}/SKILL.md` |
+| Scripts (when Primitive 5 or 6 selected) | `{workspace}/scripts/` — copy all `.ps1` and `.sh` files from `{gsd_home}/templates/skills/{skill-name}/scripts/` for each skill that includes scripts (file-lock, skill-search) |
+| Startup scripts | `{workspace}/start.ps1`, `{workspace}/start.sh` — generated from `{gsd_home}/templates/scripts/start.ps1.tmpl` and `start.sh.tmpl`; always installed at workspace root regardless of preset |
+| Local environment file | `{workspace}/.env.local` — generated from `{gsd_home}/templates/scripts/.env.local.tmpl`; seeds `workspaceFolder={{WORKSPACE_ROOT}}`. Gitignored per-developer secrets file — **write only if it does not already exist**; never overwrite an existing `.env.local` |
+| Markdownlint config (when `tools.markdownlint` detected or operator opt-in) | `{workspace}/.markdownlint.json` — resolved from `{gsd_home}/templates/scripts/.markdownlint.json.tmpl` (no variables to resolve; copy as-is) |
+| Markdownlint pre-commit hooks (when markdownlint config installed) | `{workspace}/scripts/pre-commit-markdownlint.sh`, `{workspace}/scripts/pre-commit-markdownlint.ps1` — copied from `{gsd_home}/templates/scripts/pre-commit-markdownlint.sh.tmpl` and `pre-commit-markdownlint.ps1.tmpl`; set execute permission on `.sh` after copy: `chmod +x scripts/pre-commit-markdownlint.sh` |
+| CI workflow (when `ci.platform` is GitHub Actions and a toolchain is detected) | `{workspace}/.github/workflows/ci.yml` — resolved from `{gsd_home}/templates/ci/ci.yml.tmpl`; drop any expensive-job gate step whose command variable has no discovered value (keep only the gates in `local_gating.pre_push_gates`). Includes the always-running `topology-check` job (109.014-T / C2) invoking the CI topology-check entrypoint below **only when `{{FEATURE_SHIPMENTS}}` is `true` (backlogit shipment support)** — the `pipeline-topology` gate's `FilesystemTopologyReaders` currently reads only `.backlogit`, so a backlog-md/manual/non-shipment-capable install would always resolve `BACKLOG_UNAVAILABLE` (permanent BLOCK once `PIPELINE_TOPOLOGY_GATE_REQUIRED` is promoted); omit the `topology-check` job entirely — never render it advisory-only as a workaround — for those installs. **Omission is a single atomic composition step, not just deleting the job block**: also remove `topology-check` from `ci-gate`'s `needs: [changes, expensive, topology-check]` array (leaving `needs: [changes, expensive]`) and drop `${{ needs['topology-check'].result }}` from `ci-gate`'s result-aggregation `results=` line, so the rendered workflow never references an undefined job — a job present in `needs:` with no matching job definition is an invalid GitHub Actions workflow, which would break `ci-gate` (and therefore all CI) for every backlog-md/manual install, not merely leave the Gate C backstop absent. See `templates/ci/README.md` and P-019 |
+| CI topology-check entrypoint (109.011-T / C1, installed whenever the CI workflow row above applies **and `{{FEATURE_SHIPMENTS}}` is `true`**) | `{workspace}/scripts/ci-topology-check.sh` — copied from `{gsd_home}/templates/ci/ci-topology-check.sh.tmpl`; set execute permission after copy: `chmod +x scripts/ci-topology-check.sh`. Fail-closed, no advisory-degrade toggle (unlike the local hooks): the CI workflow's `topology-check` job invokes this script and applies the required-vs-advisory decision at the JOB level via the `PIPELINE_TOPOLOGY_GATE_REQUIRED` repository variable (default unset = advisory/non-blocking; set to `'true'` to flip to required/blocking — no workflow re-render needed). See `docs/pipeline-topology-gate.md` |
+| Pre-push quality-gate hooks (when `local_gating.pre_push_enabled`) | `{workspace}/scripts/pre-push-quality-gates.sh`, `{workspace}/scripts/pre-push-quality-gates.ps1` — resolved from `{gsd_home}/templates/scripts/pre-push-quality-gates.sh.tmpl` and `pre-push-quality-gates.ps1.tmpl`; drop any gate line whose command variable has no discovered value; set execute permission on `.sh` after copy: `chmod +x scripts/pre-push-quality-gates.sh`. **Opt-in**: write the scripts and install guidance only — never overwrite the developer's `.git/hooks/pre-push` or set `core.hooksPath` automatically (P-019). These hooks now also invoke `gsd gate pipeline-topology --mode manual --phase ambient` (non-shipment-scoped, advisory-first, P-001/P-016) |
+| Pipeline-topology pre-commit hook (when `gsd` CLI provides `gate pipeline-topology`, i.e. always for this product) | `{workspace}/scripts/pre-commit-pipeline-topology.sh`, `{workspace}/scripts/pre-commit-pipeline-topology.ps1` — copied from `{gsd_home}/templates/scripts/pre-commit-pipeline-topology.sh.tmpl` and `pre-commit-pipeline-topology.ps1.tmpl`; set execute permission on `.sh` after copy: `chmod +x scripts/pre-commit-pipeline-topology.sh`. **Opt-in**: write the scripts and install guidance only — never overwrite the developer's `.git/hooks/pre-commit` or set `core.hooksPath` automatically; if a markdownlint pre-commit hook is also installed, the install guidance must instruct the operator to chain both from a single dispatcher rather than overwrite one with the other (P-019) |
+| Policies | `{workspace}/.github/policies/` |
+| Prompts | `{workspace}/.github/prompts/` |
+| Backlog config + stash | `{workspace}/{{BACKLOG_DIRECTORY}}/` (queue/, archive/, config.yml, queue/.stash.md) |
+| Knowledge directories | `{workspace}/` ({{DOCS_COMPOUND}}/, {{DOCS_PLANS}}/, {{DOCS_DECISIONS}}/, {{DOCS_MEMORY}}/, {{DOCS_CLOSURE}}/) |
+
+#### Step 3.2b: Update .gitignore
+
+Always ensure the workspace `.gitignore` ignores the generated `.env.local`
+environment file (it holds per-developer secrets and machine-specific values and
+must never be committed):
+
+1. If `.gitignore` does not exist, create it.
+2. If it exists but does not already ignore `.env.local` (directly or via a
+   `.env.*` pattern), append:
+   * `.env`
+   * `.env.*`
+   * `!.env.example`
+3. Record this action in the manifest so the tuner can detect if it was removed.
+
+Additionally, ensure the workspace `.gitignore` ignores the Part B foreign-delta
+baseline that the P-011 clean-tree contract maintains at runtime. It is
+tool-managed state and must never be committed:
+
+1. If `.gitignore` does not exist, create it with:
+   * `.gsd/worktree-baseline.json`
+2. If `.gitignore` exists but does not already ignore `.gsd/worktree-baseline.json`,
+   append that entry.
+3. Record this action in the manifest so the tuner can detect if it was removed.
+
+Additionally, if the `file-lock` skill is being installed (Primitive 5 selected),
+ensure the workspace `.gitignore` contains entries for agent lock files:
+
+1. If `.gitignore` does not exist, create it with:
+   * `.*.lock`
+   * `**/.*.lock`
+2. If `.gitignore` exists but does not contain these dotfile lock patterns,
+   append any missing entries:
+   * `.*.lock`
+   * `**/.*.lock`
+3. Record this action in the manifest so the tuner can detect if it was removed
+
+#### Step 3.2c: Prefer Workspace Discovery; User Settings Are Legacy-Only
+
+When `vscode.detected` is true, prefer the installed workspace roots
+`.github/agents/`, `.github/skills/`, and `.github/prompts/` and any
+workspace-scoped client configuration. Do not write user settings as part of a
+normal sandbox-local installation.
+
+> **Legacy compatibility only.** `gsd setup-vscode` and the historical
+> procedure below write outside the workspace to VS Code user settings. They
+> are not a sandbox-compliant install and require a separate, explicit operator
+> request. Never auto-run or represent that path as recommended.
+
+> **Resolved paths only — no tilde.** `~` is not expanded in VS Code JSON
+> settings path keys on Windows. Always use the absolute path returned by
+> `gsd home`.
+
+**Historical compatibility procedure (do not use by default):**
+
+| Platform | User settings path |
+|---|---|
+| Windows | `%APPDATA%\Code\User\settings.json` (resolve `%APPDATA%`) |
+| macOS | `$HOME/Library/Application Support/Code/User/settings.json` |
+| Linux | `$HOME/.config/Code/User/settings.json` |
+
+Platform is determined from the OS reported by the agent runtime. On Windows,
+resolve `%APPDATA%` to its actual value (e.g. `C:\Users\alice\AppData\Roaming`).
+Never use `~` in the resulting path string.
+
+1. **Resolve the gsd home path** — run `gsd home` or use the
+   already-resolved value from Step 1.0. This produces an absolute path with no
+   tilde (e.g. `C:\Users\alice\AppData\Roaming\uv\tools\gsd\Lib\site-packages\gsd\data`).
+2. **Detect the user settings path** from the platform as above
+3. **Read the user settings file** if it exists; parse as JSONC (preserving
+   existing content); if it does not exist, start with an empty object
+4. **Merge gsd discovery entries** without removing existing keys:
+   * Add `"{gsd_home}/.github/agents": true` under
+     `chat.agentFilesLocations` (create the key if absent; merge into it if
+     present, preserving any existing entries)
+   * Add `"{gsd_home}/.github/skills": true` under
+     `chat.agentSkillsLocations` (same merge rule)
+   * Add `"{gsd_home}/.github/prompts": true` under
+     `chat.promptFilesLocations` (same merge rule — makes `/install-harness`
+     and `/tune-harness` available as slash commands from any workspace)
+5. **Write the result back** to the user settings file as valid JSON (2-space
+   indentation; existing keys and values are preserved, but JSONC comments and
+   non-standard formatting are not round-tripped)
+6. **Skip this step** silently if `vscode.has_agent_settings` is already true
+   (the entries are already correct — avoid duplicating or overwriting)
+7. **Record this action** in the manifest under a `vscode_settings` key so the
+   tuner can detect if the entries were removed from user settings
+
+For normal installs, record that workspace-owned discovery is in use and
+perform no user-home write. When `vscode.detected` is false, skip this step
+entirely.
+
+#### Step 3.3: Write Installation Manifest
+
+Create `.gsd/harness-manifest.yaml` recording install-time checksums that
+the tuner can later re-hash for deterministic drift detection:
+
+```yaml
+schema_version: "1.1.0"
+installed_at: "{{ISO_8601_TIMESTAMP}}"
+gsd_version: "{{GSD_VERSION}}"
+gsd_home: "{{GSD_HOME}}"
+profile_hash: "{{SHA256_OF_PROFILE}}"
+config_hash: "{{SHA256_OF_CONFIG_OR_NULL}}"  # null if no .gsd/config.yaml was present
+install_preset: "{{PRESET}}"
+primary_stack_pack: {{PRIMARY_STACK_PACK}}
+stack_packs: [{{STACK_PACKS}}]
+install_layers: [{{INSTALL_LAYERS}}]
+capability_packs: [{{CAPABILITY_PACKS}}]
+capability_pack_overlays:
+  - pack: "{{PACK_NAME}}"
+    overlay_targets: [{{OVERLAY_TARGETS}}]
+    verification_checks: [{{OVERLAY_VERIFICATION_CHECKS}}]
+  # When agent-engram is enabled, a real (non-commented) overlay entry is required:
+  # - pack: "agent-engram"
+  #   overlay_targets:
+  #     - "foundation-docs"
+  #     - "agent-engram.instructions.md"
+  #     - "pipeline-agents"
+  #     - "analysis-heavy-workflows"
+  #   verification_checks:
+  #     - "agent-engram.instructions.md installed at .github/instructions/"
+  #     - "_stage.agent.md contains Engram session-start check (get_workspace_status)"
+  #     - "_ship.agent.md contains Engram session-start check (get_workspace_status)"
+  #     - "copilot-instructions.md engram block cross-references installed instructions"
+  #     - "No unresolved {{VARIABLE}} in agent-engram.instructions.md"
+primitives_installed: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+vscode_settings:
+  applied: true|false               # false when vscode.detected was false
+  user_settings_path: "C:\\Users\\alice\\AppData\\Roaming\\Code\\User\\settings.json"  # resolved absolute path, no tilde
+  entries_added:
+    - "chat.agentFilesLocations[\"{{GSD_HOME}}/.github/agents\"]"
+    - "chat.agentSkillsLocations[\"{{GSD_HOME}}/.github/skills\"]"
+    - "chat.promptFilesLocations[\"{{GSD_HOME}}/.github/prompts\"]"
+  skipped_because: null             # "already_present" when has_agent_settings was true
+artifacts:
+  - path: ".github/instructions/constitution.instructions.md"
+    primitive: 5
+    template: "foundation/constitution.instructions.md.tmpl"
+    checksum: "{{SHA256}}"
+  # ... all installed artifacts
+variables_used:
+  PROJECT_NAME: "{{value}}"
+  PRIMARY_LANGUAGE: "{{value}}"
+  GSD_BUNDLE_PATH: "{{value}}"      # e.g. .gsd/gsd-assets-v1.6.0.zip
+  GSD_BUNDLE_VERSION: "{{value}}"   # e.g. 1.6.0
+  GSD_BUNDLE_SHA256: "{{value}}"    # 64-hex SHA-256 of the source bundle archive
+  GSD_RELEASE_TAG: "{{value}}"      # e.g. v1.6.0
+  # ... all resolved variables
+```
+
+When installing from a pre-built versioned release bundle (`gsd-assets-v<version>.zip` or `gsd-assets.zip`), record the source archive provenance in `.gsd/harness-manifest.yaml` via `gsd_home`, `gsd_version`, and the `variables_used` keys `GSD_BUNDLE_PATH`, `GSD_BUNDLE_VERSION`, `GSD_BUNDLE_SHA256`, and `GSD_RELEASE_TAG` alongside `.gsd/runtime-manifest.json` (preserving `schemas/harness-manifest/1.1.0.schema.json` unchanged).
+
+#### Step 3.4: Write Resolved Configuration
+
+Write (or update) `.gsd/config.yaml` using the `harness-config.yaml.tmpl` template with all resolved values. This records the actual configuration used during installation:
+
+* If an operator config existed, preserve all operator-provided values and fill in defaults for omitted fields. When the installer discovers values that differ from the operator's explicit choices (e.g., new capability packs auto-detected), the operator's explicit values win — discovered values are recorded in a separate `_discovered` comment block for the tuner to surface later. This includes both the legacy flat escalation override (`{{LEGACY_ESCALATION_FAMILY}}`/`{{LEGACY_ESCALATION_PROVIDER}}`/`{{LEGACY_ESCALATION_REASONING_EFFORT}}`/`{{LEGACY_ESCALATION_CONTEXT_TIER}}`) AND the nested per-role escalation overrides (`{{STAGE_ESCALATION_FAMILY}}`/`{{STAGE_ESCALATION_PROVIDER}}`/`{{STAGE_ESCALATION_REASONING_EFFORT}}`/`{{STAGE_ESCALATION_CONTEXT_TIER}}` and their Ship equivalents, including `{{SHIP_ESCALATION_CONTEXT_TIER}}`, F02FD596): read each set directly from its own raw storage path (`config.model_routing.escalation.*` for the legacy flat set; `config.model_routing.stage.escalation.*` / `config.model_routing.ship.escalation.*` for the nested sets — no fallback resolution for any of them) and write each back verbatim into its own always-rendered block in `harness-config.yaml.tmpl` (the flat `escalation` block, and the `stage.escalation` / `ship.escalation` blocks respectively). These three raw variable sets are distinct storage slots from the acting-role-collapsed `{{ESCALATION_FAMILY}}`/`{{ESCALATION_PROVIDER}}`/`{{ESCALATION_REASONING_EFFORT}}`/`{{ESCALATION_CONTEXT_TIER}}` variables used only for agent and `escalation-protocol.instructions.md` rendering — **never** use the acting-role-collapsed variables to populate any raw config block, and never let a re-render/tune conflate or drop a distinct legacy-flat, Stage-only, or Ship-only override into another block. Populating the flat block from the nested-first-resolved collapsed variable was exactly the bug this raw three-way split fixes (Copilot review round 3, PR #316) — it would silently copy a nested-only override into the flat block on re-render, producing the H2 both-present ambiguity. By contrast, tier, orchestrator, and role `context_tier` values (`{{TIER_1_CONTEXT_TIER}}`/`{{TIER_2_CONTEXT_TIER}}`/`{{TIER_3_CONTEXT_TIER}}`, `{{ORCHESTRATOR_CONTEXT_TIER}}`, `{{STAGE_CONTEXT_TIER}}`, `{{SHIP_CONTEXT_TIER}}`) are written back resolved.
+* If no operator config existed, write a complete config with all schema defaults and discovered values
+* Any non-empty `model_routing.routes` and `model_routing.bindings` in the operator's existing raw config are carried over verbatim: they are never regenerated, emptied, or variable-substituted by an install, merge-install, or tune re-render. The template's literal `{}` applies only when the existing config has none and the config is written at schema `1.2.0` or later. Likewise, in a `1.4.0` config (written back via `{{CONFIG_SCHEMA_VERSION}}`), any operator-authored `<role>.escalation.chain` (`stage.escalation.chain` via `{{STAGE_ESCALATION_CHAIN_YAML}}` / `{{STAGE_ESCALATION_DIRECT_PREFIX}}`, `ship.escalation.chain` via `{{SHIP_ESCALATION_CHAIN_YAML}}` / `{{SHIP_ESCALATION_DIRECT_PREFIX}}`), `model_routing.unavailable_routes` (`{{UNAVAILABLE_ROUTES_YAML}}`), and `model_routing.unavailable_families` (`{{UNAVAILABLE_FAMILIES_YAML}}`) are carried over verbatim; configs below `1.4.0` omit those `1.4.0`-only keys because `schemas/harness-config/1.3.0.schema.json` and earlier schemas do not allow them. An existing operator config is never silently version-bumped here: keep the observed `schema_version`, because a bump goes through the tune-harness approval path. When the retained or observed `schema_version` is below `1.2.0` (including a valid `1.1.0` config that declares neither key), preserve each absent key as absent: omit the `routes` and `bindings` keys entirely, together with the template's empty-block lines and their comment, rather than emitting empty maps. Verification flags the mere presence of either key below `1.2.0` as `ROUTING_KEYS_REQUIRE_1_2_0` (`routing_inert_keys`), even when the map is empty, so an empty default would fail a re-install the operator never opted into migrating. The empty `{}` defaults apply only to a fresh install or a config written at schema `1.2.0` or later. This omission never drops an operator-authored value: a non-empty `routes` or `bindings` is carried over verbatim even below `1.2.0`, where verification reports it for the operator to resolve through the tune-harness approval path.
+* When the Step 1.2 fresh-install Ship seed fired, write the seeded `model_routing.ship` route explicitly so later install, verify, and tune runs read it as an operator-visible Ship route and never re-apply the seed
+* The resolved config serves as input for future `tune-harness` runs and enables the tuner to detect configuration drift
+
+The installed config includes: `schema_version`, `preset`,
+`primary_stack_pack`, `stack_packs`, `install_layers`, `capability_packs`,
+`backlog` (tool, directory, suffix_map), `docs` (root, subdirectories),
+`continuous_learning`, `model_routing` (including any operator `routes` and `bindings`), and any `overrides` that were applied.
+
+#### Step 3.5: Create the Operator-Owned Carry-Forward File
+
+`.gsd/carry-forward.yaml` is the operator-owned P-011 carry-forward configuration (schema `schemas/carry-forward/1.0.0.schema.json`). Create it from `templates/foundation/carry-forward.yaml.tmpl` (no variables) **only when it is absent**, and record it in the manifest with the LF-normalized SHA-256 of the installed default. If the file already exists, never overwrite, merge into, or re-render it: it belongs to the operator, and a re-install or merge install leaves its content untouched. Edits take effect only once committed, because the gate reads the committed HEAD copy.
+
+### Phase 4: Verification
+
+Use `gsd verify-workspace --workspace {workspace_path}` as the deterministic verification engine for this phase. The command stages renderable artifacts into `.gsd/staging/`, runs a portability scan to flag hardcoded environment-specific paths in installed artifacts (surfaced as P1 warnings), and produces JSON plus Markdown reports before adversarial review runs.
+
+#### Step 4.1: Template Variable Sweep
+
+Scan every installed artifact for unresolved template variables:
+
+1. Search all installed `.md` files for `{{` followed by `}}`
+2. Exclude occurrences inside fenced code blocks (between ` ``` ` markers) that
+   are intentional examples
+3. For each match, record the file path, line number, and variable name
+4. **FAIL** verification if any unresolved variables are found outside code fences
+5. Also scan the written harness manifest (`{{HARNESS_MANIFEST_PATH}}`) for unresolved `{{...}}`
+   in scalar field values. In particular, `gsd_version` MUST be a concrete
+   version string, never a literal `{{GSD_VERSION}}`. **FAIL** verification if
+   the manifest contains an unresolved placeholder — a literal version would silently
+   poison harness-doctor's drift check.
+
+#### Step 4.2: Cross-Reference Sweep
+
+Verify all installed artifacts are internally consistent:
+
+1. **Agent → Skill references**: For each agent, verify every skill name
+   mentioned in the agent body resolves to an installed
+   `.github/skills/{name}/SKILL.md` file. Report missing skills.
+2. **Agent → Tool references**: For each agent's `tools:` frontmatter field,
+   verify referenced tools exist in the workspace or are standard environment
+   tools. Report missing tools.
+3. **Instruction → File references**: For each instruction file's `applyTo`
+   glob pattern, verify the pattern matches at least one file in the workspace.
+   Report orphaned patterns.
+4. **Policy → Agent references**: For each policy in the registry, verify the
+   `Applies To` agents were installed. Report dangling references.
+5. **Constitution → Language consistency**: Verify the constitution's
+   technology-specific rules reference the same language as the installed
+   language instruction file.
+6. **Layer → Artifact consistency**: Verify the recorded `install_layers` match
+   the artifact classes actually installed:
+   * `review` → review personas plus `review` / `plan-review` skills present
+   * `runtime` → `runtime-verification` and `operational-closure` skills present
+   * `overlays` → at least one pack-specific instruction file present
+   * `knowledge` → docs-root directories exist
+
+#### Step 4.3: Overlay Coherence Sweep
+
+For each enabled capability pack:
+
+1. Load the pack's declared overlay targets from the manifest
+2. Verify each target artifact exists
+3. For each target, verify the artifact contains at least one reference to the
+   pack's core behavior keyword (e.g., `strict-safety` → "ProposedAction" or "ActionRisk";
+   `release-observability` → "monitoring plan" or "rollback trigger")
+4. **FAIL** verification if any target artifact is missing or lacks the
+   expected behavior reference — this indicates a partially woven overlay
+
+#### Step 4.4: Structural Validation
+
+1. Validate YAML frontmatter in all installed `.md` files (parse as YAML;
+   report syntax errors)
+2. Verify all Markdown code fences are properly closed (matching ` ``` ` pairs)
+3. Verify all Markdown tables have consistent column counts per table
+4. Verify file paths in cross-references resolve to actual files
+5. **Markdownlint config verification** (when markdownlint config was installed):
+   a. Confirm `.markdownlint.json` is present at workspace root
+   b. Confirm it enables `MD001`, `MD025`, and `MD041`. Each rule must be either
+      `true` or a JSON object configuring that rule (an object enables the rule
+      while tuning it). The canonical config ships
+      `"MD025": { "front_matter_title": "" }`, which enables MD025 while
+      disabling its default frontmatter-`title:`-counts-as-H1 heuristic — treat
+      that object form as satisfying the requirement, not as drift. Report FAIL
+      only when a rule is absent or explicitly `false`.
+   c. Confirm `scripts/pre-commit-markdownlint.sh` and `scripts/pre-commit-markdownlint.ps1`
+      are present in `{workspace}/scripts/`
+   d. Report FAIL for any missing artifact
+6. **Merge policy verification** (universal — applies to all installed harnesses):
+   a. Confirm `constitution.instructions.md` contains "Merge Commit History Preservation"
+      or equivalent principle text referencing P-009
+   b. Confirm `workflow-policies` contains "P-009" and "squash" keyword
+   c. Confirm `_ship.agent.md` or the pr-lifecycle skill contains a pre-merge strategy
+      guardrail referencing P-009
+   d. Confirm `git-merge.instructions.md` contains a squash-merge prohibition section
+   e. Report FAIL for any missing artifact — absent merge policy is a P-009 violation risk
+ 6a. **Full-build PR gate verification** (universal — applies to all installed harnesses):
+    a. Confirm `_ship.agent.md` requires a full local build before code-changing PRs
+    b. Confirm `pr-lifecycle/SKILL.md` requires successful full local build evidence in PR readiness for code-changing PRs
+    c. Confirm `github-pr-automation.instructions.md` includes the `Full local build` readiness field and gate check
+    d. Report FAIL for stale guidance that allows code-changing PRs without successful full local build evidence
+7. **No-parallel branch/worktree verification** (universal — applies to all installed harnesses):
+   a. Confirm `workflow-policies` contains `P-016` and "No Parallel Branch/Worktree Execution"
+   b. Confirm `constitution.instructions.md` or root `AGENTS.md` states single active implementation branch/worktree behavior
+   c. Confirm `_ship.agent.md` contains a P-016 worktree topology gate before shipment claim or mutation
+   d. Confirm `_stage.agent.md` limits extra worktrees to explicit Stage spike/research investigation with no implementation, template/source/config mutation, shipment claim, PR preparation, or Ship execution
+   e. Confirm `_orchestrator.agent.md` describes planning overlap without requiring different implementation branches
+   f. Report FAIL for stale guidance that endorses parallel implementation branches/worktrees outside the Stage spike/research exception
+8. **Dark factory verification** (when P-017, `gsd-dark-mode`, or `feature-flow-dark` is installed):
+   a. Confirm `workflow-policies` contains `P-017`, exact trigger `Run pipeline in dark mode`, and `DARK_MODE_ACTIVE`
+   b. Confirm `_orchestrator.agent.md` records bounded scope, merge approval authority, admin fallback authority, stop conditions, and `DARK_MODE_START` / `DARK_MODE_COMPLETE`
+   c. Confirm `_ship.agent.md` or `pr-lifecycle` requires current-HEAD local readiness, P-009 merge commit strategy, required checks, P-016 topology, and immediate `headRefOid` re-check before merge/admin fallback
+   d. Confirm the `workflow-policies` P-017 Dark Factory Visibility Protocol contains the dark-mode visibility events, including `BRAINSTORM_HANDOFF_READY`, and degraded-visibility halt behavior
+   e. Confirm `.github/skills/gsd-dark-mode/SKILL.md`, `.github/prompts/gsd-dark-mode.prompt.md`, and `.github/prompts/feature-flow-dark.prompt.md` route through Orchestrator and do not bypass Stage, Ship, backlog/shipment policy, local readiness, telemetry, or closure
+   f. Report FAIL for missing or stale guidance that treats dark mode as a safety bypass, allows vague trigger phrases, or omits closure evidence (decisions, gates, reviewed HEADs, merge/fallback status, closure status, follow-ups)
+9. **Pipeline-topology hook verification** (mixed scope: item (a) applies only when
+   `local_gating.pre_push_enabled` is `true` for this workspace — the pre-push scripts
+   are opt-in and intentionally absent otherwise, per Step 4.3's mapping; items (b)-(d)'s
+   pre-commit checks are universal whenever the installed `gsd` CLI provides
+   `gate pipeline-topology`):
+   a. **Only when `local_gating.pre_push_enabled` is `true`**: confirm
+      `scripts/pre-push-quality-gates.sh` and `.ps1` invoke
+      `gsd gate pipeline-topology` with `--phase ambient` and no
+      human-supplied `--shipment` flag (non-shipment-scoped ambient contract).
+      When `local_gating.pre_push_enabled` is `false`, the absence of these files
+      is expected and must NOT be reported as FAIL.
+   b. Confirm `scripts/pre-commit-pipeline-topology.sh` and `.ps1` are present
+      in `{workspace}/scripts/`, invoke the same non-shipment-scoped
+      `--phase ambient` contract, and document the `--no-verify` bypass
+   c. Confirm both installed hook families (pre-commit always; pre-push only when
+      enabled) default to advisory (non-blocking) unless an
+      explicit blocking toggle (`GSD_TOPOLOGY_GATE_BLOCKING=true`) is
+      set, and contain no retry loop (`while true`, `for ((`)
+   d. Report FAIL for any missing REQUIRED artifact (pre-commit always; pre-push
+      only when `local_gating.pre_push_enabled` is `true`), a shipment-scoped
+      invocation, or hard-fail-by-default wiring
+   e. **Only when `ci.platform` is GitHub Actions and the CI workflow row applies**:
+      confirm the `topology-check` job's presence matches `{{FEATURE_SHIPMENTS}}`
+      exactly: present (with `scripts/ci-topology-check.sh` installed) when
+      `{{FEATURE_SHIPMENTS}}` is `true`; entirely absent (no job, no entrypoint
+      script) when `{{FEATURE_SHIPMENTS}}` is `false`, since the gate's backlog
+      reader requires `.backlogit` and would otherwise permanently BLOCK once
+      `PIPELINE_TOPOLOGY_GATE_REQUIRED` is promoted. When present, confirm
+      `scripts/ci-topology-check.sh` invokes
+      `gsd gate pipeline-topology --mode ci --phase ambient` with no
+      human-supplied `--shipment` flag, propagates the gate's raw exit code
+      unmodified (fail-closed — unlike the pre-commit/pre-push hooks, this
+      entrypoint carries NO `GSD_TOPOLOGY_GATE_BLOCKING`-style
+      advisory-degrade toggle), and confirm `.github/workflows/ci.yml`
+      contains a `topology-check` job gated on the
+      `PIPELINE_TOPOLOGY_GATE_REQUIRED` repository variable. When absent
+      (`{{FEATURE_SHIPMENTS}}` is `false`), confirm `ci-gate`'s `needs:` array
+      contains no `topology-check` entry and its result-aggregation `results=`
+      line contains no `needs['topology-check'].result` reference — a
+      dangling reference to an undefined job is an invalid GitHub Actions
+      workflow and breaks `ci-gate` (all of CI), not merely the absent
+      backstop. Report FAIL for a missing entrypoint when
+      `{{FEATURE_SHIPMENTS}}` is `true`, a present job/entrypoint when
+      `{{FEATURE_SHIPMENTS}}` is `false`, a dangling `needs`/`results`
+      reference to `topology-check` when the job was omitted, a
+      shipment-scoped invocation, an added advisory-degrade toggle, or a
+      workflow job missing the toggle wiring. Additionally confirm
+      `.github/workflows/ci.yml`'s `on: push:`/`on: pull_request:` trigger
+      filters resolved `{{CI_DEFAULT_BRANCH}}` to an actually-confirmed
+      default branch name, not a silent, unverified `main` guess for a
+      workspace whose default branch could not be resolved during install —
+      report FAIL if installation proceeded past an unresolved
+      `{{CI_DEFAULT_BRANCH}}` rather than halting to ask the operator
+
+#### Step 4.5: Adversarial Verification
+
+Invoke the **verify-harness** skill to run multi-model adversarial review of the
+installed artifacts. This step is mandatory for `standard` and `full` presets and
+may be skipped for `starter` or when `--skip-adversarial` is explicitly passed.
+
+Pass:
+
+* `gsd_home`: The resolved gsd installation path
+* `workspace_path`: The target workspace path
+* `manifest_path`: `{workspace_path}/.gsd/harness-manifest.yaml`
+* `auto_remediate`: true (apply HIGH-confidence fixes automatically)
+* `scope`: `all`
+
+The verify-harness skill dispatches three independent reviewer subagents — each
+using a different model — to audit template fidelity, overlay coherence, and
+cross-reference integrity. Findings are assembled into a confidence-weighted
+consensus report. HIGH-confidence additive or corrective fixes are applied
+automatically; destructive or ambiguous fixes are presented to the operator.
+
+If adversarial verification returns **FAIL** (unresolved HIGH-confidence
+CRITICAL/MAJOR findings), halt installation and present the findings. The
+operator must resolve them before the installation is considered complete.
+
+If adversarial verification returns **PASS WITH WARNINGS**, present the MEDIUM
+findings as advisory and continue.
+
+#### Step 4.6: Report
+
+Present an installation summary:
+
+```text
+Harness Installation Complete
+─────────────────────────────
+Workspace: {{PROJECT_NAME}}
+Language:  {{PRIMARY_LANGUAGE}}
+Primary stack: {{PRIMARY_STACK_PACK_OR_NONE}}
+Stack packs: {{STACK_PACKS_OR_NONE}}
+Primitives installed: selected subset / 10
+Preset: {{PRESET}}
+Install layers: {{INSTALL_LAYERS_OR_NONE}}
+Capability packs: {{CAPABILITY_PACKS_OR_NONE}}
+Ship route seed: applied (Step 1.2 fresh-install Ship seed) | not applied
+
+Artifacts created:
+  Instructions:    {{count}}
+  Agents:          {{count}}
+  Review Personas: {{count}}
+  Skills:          {{count}}
+  Policies:        {{count}}
+  Prompts:         {{count}}
+  Backlog dirs:    {{count}}
+
+Verification: {{PASS/FAIL with details}}
+```
+
+## Quality Criteria
+
+* No template variables remain in output files
+* All cross-references between artifacts resolve
+* The installed harness passes structural validation
+* The installation manifest accurately records every artifact and variable
+* A second run with the same profile produces identical output (idempotent)
+* When the workspace is Git-backed, install output is left as feature-branch work or local uncommitted changes awaiting feature-branch handoff; direct default-branch commit/push is never recommended

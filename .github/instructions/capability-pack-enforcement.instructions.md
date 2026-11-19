@@ -1,5 +1,5 @@
 ---
-description: "Capability-pack usage-enforcement coordinator — cross-pack retrieval routing, precedence, exemptions, and sensitivity-aware fallback for retrieval-enforced packs (agent-engram, graphtor-docs)"
+description: "Capability-pack usage-enforcement coordinator — cross-pack retrieval routing, precedence, exemptions, and sensitivity-aware fallback for retrieval-enforced packs (agent-engram, kbdb)"
 applyTo: '**'
 ---
 
@@ -23,8 +23,8 @@ rules, and pack-specific fallback. This coordinator defers to:
 <!-- BEGIN:capability-pack-deferral -->
 * `.github/instructions/agent-engram.instructions.md` — engram lifecycle,
   indexed/semantic search, code-graph lookup, freshness. <!-- defer:agent-engram -->
-* `.github/instructions/graphtor-docs.instructions.md` — graphtor-docs server
-  lifecycle, indexed doc search, semantic retrieval, doc-link traversal. <!-- defer:graphtor-docs -->
+* `.github/instructions/kbdb.instructions.md` — kbdb server
+  lifecycle, indexed doc search, semantic retrieval, doc-link traversal. <!-- defer:kbdb -->
 <!-- END:capability-pack-deferral -->
 
 When this coordinator and a pack instruction appear to conflict on a
@@ -39,7 +39,7 @@ Before a retrieval operation, classify the query and route it:
 | Query kind | Route to | Marker |
 |---|---|---|
 | Structural/conceptual **code** questions (symbols, callers/callees, blast radius, inheritance, implementations, implementers, "where/how is X implemented") | **agent-engram** first (indexed + code-graph search before grep/raw file reads unless a direct-tool exemption applies) | <!-- route:agent-engram --> |
-| **Documentation / domain / business-context** questions (indexed docs, APIs, SoWs, process, data mapping, "what does the spec say") | **graphtor-docs** (indexed local documentation retrieval) | <!-- route:graphtor-docs --> |
+| **Documentation / domain / business-context** questions (indexed docs, APIs, SoWs, process, data mapping, "what does the spec say") | **kbdb** (indexed local documentation retrieval) | <!-- route:kbdb --> |
 <!-- END:capability-pack-routes -->
 
 Mixed queries may use both packs. Route to the most specific pack first; widen

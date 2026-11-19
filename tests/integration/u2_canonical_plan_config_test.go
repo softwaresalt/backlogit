@@ -37,7 +37,7 @@ func checkUniqueYAMLMappingKeys(node *yaml.Node) error {
 
 func TestU2_WorkspaceConfigCanonicalPlansDir(t *testing.T) {
 	repoRoot := testRepoRoot(t)
-	raw := readGovernedSurface(t, repoRoot, ".autoharness/config.yaml")
+	raw := readGovernedSurface(t, repoRoot, ".gsd/config.yaml")
 
 	var doc yaml.Node
 	require.NoError(t, yaml.Unmarshal([]byte(raw), &doc))

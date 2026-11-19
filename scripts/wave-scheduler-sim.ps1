@@ -296,7 +296,7 @@ function Get-LiveStatusSourceProjection {
     $workspaceDir = Split-Path -Parent $Dir
     $root = Split-Path -Parent $workspaceDir
     $catalog = Read-WorkspaceStatusCatalog -Path (Join-Path $workspaceDir 'config.yaml')
-    $registryPath = Join-Path $root '.autoharness/backlog-registry.yaml'
+    $registryPath = Join-Path $root '.gsd/backlog-registry.yaml'
     $mapping = Read-TopLevelYamlMapping -Path $registryPath -Name 'status_values'
     $allFeatures = Read-TopLevelYamlMapping -Path $registryPath -Name 'features'
     $errors = @($catalog.Errors + $mapping.Errors + $allFeatures.Errors)

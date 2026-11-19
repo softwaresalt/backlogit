@@ -3,14 +3,14 @@ tool_name: "backlogit"
 tool_type: "both"
 # New workspaces default to .backlog. Existing repositories may continue to use
 # .backlogit until they are migrated with `backlogit migrate --workspace-dir`.
-directory: ".backlog"
+directory: ".backlogit"
 
 mcp_server:
-  command: "backlogit mcp"
+  command: ".\\.bin\\backlogit.exe mcp"
   transport: "stdio"
 
 cli:
-  binary: "backlogit"
+  binary: ".\\.bin\\backlogit.exe"
 
 operations:
   create_task:

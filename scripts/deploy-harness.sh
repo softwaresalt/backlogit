@@ -10,14 +10,14 @@
 #   preflight  -> verify prerequisites (fail closed on missing hard prereqs)
 #   bootstrap  -> locate/acquire autoharness_home (global; opt-in via --bootstrap)
 #   register   -> run autoharness setup-* / copilot plugin install
-#   scaffold   -> write .autoharness/config.yaml (preset + resolved capability packs)
+#   scaffold   -> write .gsd/config.yaml (preset + resolved capability packs)
 #   compose    -> HANDOFF ONLY: print the /install-harness command; NO template
 #                 resolution happens here (that is the agent's job)
 #   verify     -> optional deterministic `autoharness verify-workspace`
 #
 # Additive checklist phase (114-F / 47971057 bounded, non-D2): runs after
 # preflight and before bootstrap. Detects per-pack PRESENCE and VERSION for
-# backlogit/engram/graphtor-docs (`<tool> --version`; graphtor-docs also checks
+# backlogit/engram/kbdb (`<tool> --version`; kbdb also checks
 # the workspace-local .graphtor/bin/ path) and prints a REPORT-ONLY recommended
 # action per pack (retain-present / needs-install[deferred] /
 # unsupported-undetectable). It performs NO install/upgrade/provisioning.
@@ -33,7 +33,7 @@
 # mutating anything. Single deterministic pass per phase (no internal retry loop).
 #
 # Idempotent: an existing autoharness_home is detected and reused; an existing
-# .autoharness/config.yaml is backed up (timestamped) before overwrite and only
+# .gsd/config.yaml is backed up (timestamped) before overwrite and only
 # overwritten with --force; an existing .env.local is never clobbered.
 #
 # Usage: ./deploy-harness.sh [--preset P] [--packs all|a,b] [--register ENV]
@@ -65,7 +65,7 @@ FORCE=0
 PYTHON_BIN=""
 
 WORKSPACE_ROOT="$(pwd)"
-AUTOHARNESS_HOME_DEFAULT="$HOME/.autoharness"
+AUTOHARNESS_HOME_DEFAULT="$HOME/.gsd"
 PACK_REGISTRY_REL_PATH="templates/packs/capability-pack-registry.yaml"
 # Minimum autoharness version this deployment script and its generated
 # artifacts require. Bumped whenever the script depends on a gate, schema, or
@@ -234,15 +234,15 @@ pack_detect_status() {
 	# parallel PACK_DETECT_* arrays with status one of:
 	#   present       -> command found AND `--version` produced parseable output
 	#   undetectable  -> command found but `--version` produced no output
-	#   absent        -> command not found (and, for graphtor-docs, no
+	#   absent        -> command not found (and, for kbdb, no
 	#                    workspace-local .graphtor/bin/ binary either)
 	local mcp="$1" exe="" version="" status="absent"
 	if command -v "$mcp" >/dev/null 2>&1; then
 		exe="$mcp"
-	elif [[ "$mcp" == "graphtor-docs" ]]; then
-		# graphtor-docs may be installed workspace-local at .graphtor/bin/ (registry eligibility signal), not just on PATH.
-		if [[ -f ".graphtor/bin/graphtor-docs" && -x ".graphtor/bin/graphtor-docs" ]]; then exe=".graphtor/bin/graphtor-docs"
-		elif [[ -f ".graphtor/bin/graphtor-docs.exe" && -x ".graphtor/bin/graphtor-docs.exe" ]]; then exe=".graphtor/bin/graphtor-docs.exe"
+	elif [[ "$mcp" == "kbdb" ]]; then
+		# kbdb may be installed workspace-local at .graphtor/bin/ (registry eligibility signal), not just on PATH.
+		if [[ -f ".graphtor/bin/kbdb" && -x ".graphtor/bin/kbdb" ]]; then exe=".graphtor/bin/kbdb"
+		elif [[ -f ".graphtor/bin/kbdb.exe" && -x ".graphtor/bin/kbdb.exe" ]]; then exe=".graphtor/bin/kbdb.exe"
 		fi
 	fi
 	if [[ -n "$exe" ]]; then
@@ -293,7 +293,7 @@ invoke_preflight() {
 	PACK_DETECT_NAMES=()
 	PACK_DETECT_STATUS=()
 	PACK_DETECT_VERSION=()
-	for mcp in backlogit engram graphtor-docs; do
+	for mcp in backlogit engram kbdb; do
 		pack_detect_status "$mcp"
 		local idx=$((${#PACK_DETECT_NAMES[@]} - 1))
 		case "${PACK_DETECT_STATUS[$idx]}" in
@@ -444,7 +444,7 @@ invoke_scaffold() {
 		done
 	fi
 
-	local autoharness_dir="${WORKSPACE_ROOT}/.autoharness"
+	local autoharness_dir="${WORKSPACE_ROOT}/.gsd"
 	local config_path="${autoharness_dir}/config.yaml"
 
 	local body
@@ -467,7 +467,7 @@ capability_packs: []"
 		return 0
 	fi
 
-	if [[ -L "$autoharness_dir" || -L "$config_path" ]]; then fail "refusing to write: .autoharness or config.yaml is a symlink (cwd containment)."; return 1; fi
+	if [[ -L "$autoharness_dir" || -L "$config_path" ]]; then fail "refusing to write: .gsd or config.yaml is a symlink (cwd containment)."; return 1; fi
 
 	mkdir -p "$autoharness_dir"
 
@@ -504,9 +504,9 @@ invoke_compose() {
 invoke_verify() {
 	phase "verify"
 	if ! command -v autoharness >/dev/null 2>&1; then info "autoharness CLI not on PATH; skipping deterministic verify."; return 0; fi
-	if [[ ! -f "${WORKSPACE_ROOT}/.autoharness/harness-manifest.yaml" ]]; then info "no harness manifest yet (composition not run); skipping deterministic verify."; return 0; fi
+	if [[ ! -f "${WORKSPACE_ROOT}/.gsd/harness-manifest.yaml" ]]; then info "no harness manifest yet (composition not run); skipping deterministic verify."; return 0; fi
 	if [[ "$DRY_RUN" -eq 1 ]]; then info "[dry-run] would run: autoharness verify-workspace --workspace $WORKSPACE_ROOT"; return 0; fi
-	if autoharness verify-workspace --workspace "$WORKSPACE_ROOT"; then ok "verify-workspace completed (see .autoharness reports)"; return 0; else fail "verify failed"; return 1; fi
+	if autoharness verify-workspace --workspace "$WORKSPACE_ROOT"; then ok "verify-workspace completed (see .gsd reports)"; return 0; else fail "verify failed"; return 1; fi
 }
 
 # ── Orchestration ───────────────────────────────────────────────────────────

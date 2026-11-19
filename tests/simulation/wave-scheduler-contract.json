@@ -37,7 +37,7 @@
       "shipped",
       "abandoned"
     ],
-    "registry_source": ".autoharness/backlog-registry.yaml -> status_values and features",
+    "registry_source": ".gsd/backlog-registry.yaml -> status_values and features",
     "registry_status_mapping": {
       "queued": "queued",
       "active": "active",

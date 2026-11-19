@@ -2,7 +2,7 @@
 name: _Stage
 description: "Manages the stash-to-backlog pipeline: triage, deliberation, planning, risk hardening, review gating, and harvest orchestration"
 maturity: stable
-tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, graphtor-docs/search_local_docs, graphtor-docs/search_semantic, graphtor-docs/research_topic, graphtor-docs/traverse_doc_links, graphtor-docs/list_sources, graphtor-docs/get_chunk_by_id, graphtor-docs/get_document, graphtor-docs/get_status
+tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, kbdb/search_local_docs, kbdb/search_semantic, kbdb/research_topic, kbdb/traverse_doc_links, kbdb/list_sources, kbdb/get_chunk_by_id, kbdb/get_document, kbdb/get_status
 model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
 max_subagent_tier: 3
@@ -194,7 +194,7 @@ applies, evaluate the condition and log the evaluation result — do not silentl
 
 Before any pipeline work begins, verify tool availability and declare degraded mode if tools are unavailable.
 
-1. Check for the backlog registry at `.autoharness/backlog-registry.yaml`.
+1. Check for the backlog registry at `.gsd/backlog-registry.yaml`.
    - If present: load it and identify MCP tools required for this session (stash operations, shipment operations, archival).
    - If absent: proceed in manual/file-backed mode — this is the intentional operating mode, not a degradation.
 2. For each required MCP tool, probe with a read-only lightweight operation:
@@ -233,8 +233,8 @@ symbols, and prior context before falling back to broader file scans while shapi
 Agent-engram provides code-level context (symbols, modules, dependencies); use the skill-search
 tool separately when looking for harness skills by keyword — these are complementary, not competing.
 
-When the `graphtor-docs` capability pack is installed, also follow
-`.github/instructions/graphtor-docs.instructions.md`: resolve domain concepts, API references,
+When the `kbdb` capability pack is installed, also follow
+`.github/instructions/kbdb.instructions.md`: resolve domain concepts, API references,
 and architectural context from indexed local documentation using `search_local_docs`,
 `search_semantic`, or `research_topic` before falling back to web search or raw filesystem scan.
 
@@ -970,44 +970,51 @@ halt without first following this auto-escalation directive
    (threshold-kind + count, failure summary, last-N action/observation
    refs, artifact refs, telemetry-evidence pointers, resumption checkpoint
    ref).
-2. **Resolve the escalation route**: `claude-sonnet-5.5` / `anthropic` /
-   `xhigh`, resolving this workspace's currently-effective escalation route
-   per the nested per-role -> legacy flat (DEPRECATED) -> tier3 precedence
-   defined in `escalation-protocol.instructions.md` (F02FD596). This
-   resolution always reads the freshly session-start-reloaded config (never
-   a value cached earlier in a long session or a route resolved by a prior
-   session) — see the Orchestrator's Session-Start Dynamic Reload
-   (E8B5B3C5/H6/H7) section.
-   A stale escalation directive surviving a reload is a defect.
+2. **Resolve the escalation route**: run
+   `gsd routing resolve --workspace . --site stage --kind escalation --json`
+   and consume the returned route. The resolver selects whole blocks:
+   `stage.escalation.chain` first; otherwise, a present nested
+   `stage.escalation` block with per-field `model_routing.tier3` fallback;
+   otherwise, legacy flat `model_routing.escalation` (DEPRECATED) with
+   per-field `model_routing.tier3` fallback. A partial nested override never
+   inherits from the legacy flat block. A configuration rejected as
+   `AMBIGUOUS_ESCALATION_CONFIG` or
+   `ROUTING_ESCALATION_CHAIN_INVALID` is a hard error; halt to the operator
+   and never select a route manually. When the runtime cannot dispatch the
+   returned `model_family`, re-invoke
+   `gsd routing resolve --workspace . --site stage --kind escalation --unavailable <failed_family> --json`,
+   accumulating `--unavailable` values across dispatchability failures. Never
+   re-execute the failed planning operation while advancing. Stop when a
+   dispatchable level is selected or `ESCALATION_DEGRADED` is returned,
+   including immediate `ESCALATION_DEGRADED: chain-exhausted` on a chain-free
+   route. This resolution always reads the freshly session-start-reloaded
+   config rather than a cached value — see the Orchestrator's Session-Start
+   Dynamic Reload (E8B5B3C5/H6/H7). This workspace's config is schema `1.3.0`
+   and is chain-free; `stage.escalation.chain` and unavailable route/family
+   lists require schema `1.4.0`, so a runtime-unavailable direct route ends in
+   `ESCALATION_DEGRADED: chain-exhausted`.
    **Session-Start Dynamic Reload (H6) — self-contained
    for direct invocation**: Stage may also be invoked directly by the
    operator without an installed Orchestrator (see Step 0). When invoked
    this way, Stage independently applies the same fail-closed reload
    contract at its own session start rather than relying on an Orchestrator
-   that may not be present: re-read `.autoharness/config.yaml` fresh at the
+   that may not be present: re-read `.gsd/config.yaml` fresh at the
    start of the session, validate it against schema before resolving any
    route, and HALT to the operator on invalid, missing, or schema-failing
    config — Stage MUST NOT continue on a stale/baked route carried over
    from this file's frontmatter or a prior session's resolved value, and
-   MUST NOT invent a last-known-good fallback. Falls back per field to
-   `claude-sonnet-5.5` / `anthropic` / `xhigh` (this workspace's
-   `config.model_routing.tier3`) when no override for a field is declared
-   at any tier.
-   Separately, the escalation `context_tier` resolves to `default`
-   (nested `stage.escalation.context_tier` -> legacy flat
-   `escalation.context_tier` only when the flat route is the selected
-   source -> `tier3.context_tier` -> `default`).
-   Record it in the compiled payload's separate
+   MUST NOT invent a last-known-good fallback.
+   Record the resolver's `context_tier` in the compiled payload's separate
    `resolved_escalation_context_tier` field — it is not part of the
    `resolved_escalation_route` tuple and is excluded from the same-route
    guard. When the runtime cannot honor a non-`default` escalation
    `context_tier`, record `ROUTING_DEGRADED: context_tier` and hand off at
    the default context; this never blocks the handoff.
-3. **Same-route guard**: if the resolved escalation tuple equals this
-   agent's own role route tuple (Stage already operates at Tier 3 — see
-   Model Routing below — so an unset `escalation` route resolves to the
-   identical model), treat this as `ESCALATION_DEGRADED` (same-route
-   no-op) per the canonical definition in `escalation-protocol.instructions.md`.
+3. **Same-route guard**: the resolver evaluates every chain level against this
+   agent's own role route and earlier skipped levels. If no level remains, or
+   a chain-free route equals Stage's own route, treat this as
+   `ESCALATION_DEGRADED` (same-route no-op) per the canonical definition in
+   `escalation-protocol.instructions.md`.
 4. **Hand off and halt**: when the route is not degraded, record it in the
    compiled payload's `resolved_escalation_route` field, hand that payload to
    engram for analysis, and halt. The
@@ -1034,4 +1041,4 @@ This agent operates at **Tier 3 (Frontier)** — structured decision-making, res
 
 Maximum 2 hops. This agent invokes skills (deliberate, spike, impl-plan, plan-harden, plan-review, harvest, compact-context, compound) and those skills may spawn persona subagents but no deeper.
 
-Generated by autoharness | Template: stage.agent.md.tmpl
+Generated by gsd | Template: stage.agent.md.tmpl

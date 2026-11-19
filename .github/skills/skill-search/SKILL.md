@@ -84,7 +84,7 @@ If `search.ps1` / `search.sh` returns no results:
 
 ## Installed Scripts Registry
 
-All scripts installed by autoharness live in `{workspace}/scripts/`. This
+All scripts installed by gsd live in `{workspace}/scripts/`. This
 table is the central reference for what exists and where it comes from.
 
 | Script | Source Skill | Platform | Purpose |

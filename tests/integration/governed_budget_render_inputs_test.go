@@ -101,8 +101,8 @@ func TestGovernedFullSuiteBudget_RenderInputs(t *testing.T) {
 	require.Equal(t, "p\nq", renderYAMLPath(t, "x:\n  y:\n    - p\n    - q\n", "x", "y"))
 
 	repoRoot := testRepoRoot(t)
-	manifest := readGovernedSurface(t, repoRoot, ".autoharness/harness-manifest.yaml")
-	profile := readGovernedSurface(t, repoRoot, ".autoharness/workspace-profile.yaml")
+	manifest := readGovernedSurface(t, repoRoot, ".gsd/harness-manifest.yaml")
+	profile := readGovernedSurface(t, repoRoot, ".gsd/workspace-profile.yaml")
 	review := readGovernedSurface(t, repoRoot, ".github/instructions/copilot-code-review.instructions.md")
 
 	anchors := []struct {
