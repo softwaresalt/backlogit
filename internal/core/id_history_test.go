@@ -1,7 +1,10 @@
 package core
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -867,5 +870,58 @@ func TestU4_ScanLocalBranchArtifactIDsBatchesTreesAndPreservesMergedRevertedRese
 		created, err := CreateArtifact(ctx, ws, "After Revert", "feature")
 		require.NoError(t, err)
 		assert.Equal(t, "100-F", created.ID, "must allocate 100-F and never reuse reverted 099-F")
+	})
+}
+
+func TestU4_GitCatFileAndTreeEntrySafety(t *testing.T) {
+	t.Run("readGitCatFileBatch-rejects-oversized-and-negative", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			header string
+		}{
+			{name: "negative-size", header: "0123456789abcdef0123456789abcdef01234567 tree -1\n"},
+			{name: "oversized-payload", header: fmt.Sprintf("0123456789abcdef0123456789abcdef01234567 tree %d\n", (64<<20)+1)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				seenTrees := map[string]struct{}{}
+				parsedTrees := map[string]struct{}{}
+				seenIDs := map[string]struct{}{}
+				var collected []string
+				_, err := readGitCatFileBatch(bufio.NewReader(strings.NewReader(tc.header)), 1, seenTrees, parsedTrees, seenIDs, &collected)
+				require.ErrorIs(t, err, blerrors.ErrValidation)
+			})
+		}
+	})
+
+	t.Run("parseGitTreePayload-collects-regular-md-and-ignores-symlinks-gitlinks", func(t *testing.T) {
+		buildEntry := func(mode, name, oidHex string) []byte {
+			rawOID, err := hex.DecodeString(oidHex)
+			require.NoError(t, err)
+			var buf bytes.Buffer
+			buf.WriteString(mode)
+			buf.WriteByte(' ')
+			buf.WriteString(name)
+			buf.WriteByte(0)
+			buf.Write(rawOID)
+			return buf.Bytes()
+		}
+
+		const treeOID = "0123456789abcdef0123456789abcdef01234567"
+		var payload bytes.Buffer
+		payload.Write(buildEntry("100644", "001-F.md", "1111111111111111111111111111111111111111"))
+		payload.Write(buildEntry("100755", "002-F.md", "2222222222222222222222222222222222222222"))
+		payload.Write(buildEntry("120000", "003-F.md", "3333333333333333333333333333333333333333"))
+		payload.Write(buildEntry("160000", "004-F.md", "4444444444444444444444444444444444444444"))
+		payload.Write(buildEntry("100644", "notes.txt", "5555555555555555555555555555555555555555"))
+		payload.Write(buildEntry("40000", "queue", "6666666666666666666666666666666666666666"))
+
+		seenTrees := map[string]struct{}{}
+		var nextSpecs []string
+		seenIDs := map[string]struct{}{}
+		var collected []string
+		err := parseGitTreePayload(treeOID, payload.Bytes(), seenTrees, &nextSpecs, seenIDs, &collected)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"001-F", "002-F"}, collected)
+		assert.Equal(t, []string{"6666666666666666666666666666666666666666"}, nextSpecs)
 	})
 }

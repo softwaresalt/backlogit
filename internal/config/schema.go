@@ -66,14 +66,15 @@ func toolsDirFirstSegment(toolsDir string) string {
 
 // WorkspaceConfig holds the parsed workspace configuration.
 type WorkspaceConfig struct {
-	ArtifactTypes       map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
-	Fields              map[string]*FieldConfig        `yaml:"fields"`
-	BugLevel            int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
-	MaxSlugLength       int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
-	ToolsDir            string                         `yaml:"tools_dir,omitempty"`
-	QueueLayout         *QueueLayoutConfig             `yaml:"queue_layout"`
-	CheckpointRetention CheckpointRetention            `yaml:"checkpoint_retention,omitempty"`
-	Telemetry           *TelemetryConfig               `yaml:"telemetry,omitempty"`
+	ArtifactTypes map[string]*ArtifactTypeConfig `yaml:"artifact_types" validate:"required,min=1"`
+	Fields        map[string]*FieldConfig        `yaml:"fields"`
+	BugLevel      int                            `yaml:"bug_level,omitempty" validate:"omitempty,oneof=2 3"`
+	MaxSlugLength int                            `yaml:"max_slug_length" validate:"gte=10,lte=200"`
+	// ToolsDir configures the workspace-relative subdirectory where pinned tool binaries reside.
+	ToolsDir            string              `yaml:"tools_dir,omitempty"`
+	QueueLayout         *QueueLayoutConfig  `yaml:"queue_layout"`
+	CheckpointRetention CheckpointRetention `yaml:"checkpoint_retention,omitempty"`
+	Telemetry           *TelemetryConfig    `yaml:"telemetry,omitempty"`
 	// DurableWrites opts the workspace into the durable_writes fsync protocol
 	// (123-F): when true, the shared write primitives fsync file content and
 	// (on POSIX) the parent directory so a crash/power-loss cannot lose a

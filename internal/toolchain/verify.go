@@ -365,12 +365,19 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
+	if strings.ContainsRune(toolsDir, '\x00') {
+		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	}
+	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" {
+		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	}
 	relDir, err := relativePath(abs, toolsDir, false)
 	if err != nil || relDir == "." {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
-	firstSeg, _, _ := strings.Cut(filepath.ToSlash(relDir), "/")
-	if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+	slashRel := strings.ReplaceAll(filepath.ToSlash(relDir), "\\", "/")
+	firstSeg, _, _ := strings.Cut(slashRel, "/")
+	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") || strings.EqualFold(firstSeg, ".backlogit") {
 		return "", fmt.Errorf("reserved tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
 	if !bindingWithin(root, abs, toolsDir) {

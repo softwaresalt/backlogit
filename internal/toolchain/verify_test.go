@@ -960,9 +960,12 @@ host_prerequisites:
 			{name: "traversal", toolsDir: "../outside"},
 			{name: "dot-backlogit", toolsDir: ".backlogit"},
 			{name: "dot-git", toolsDir: ".git"},
+			{name: "dot-git-upper", toolsDir: ".GIT"},
+			{name: "dot-backlog-mixed", toolsDir: ".Backlog"},
 			{name: "dot", toolsDir: "."},
 			{name: "whitespace", toolsDir: "   "},
 			{name: "explicit-blank", toolsDir: ""},
+			{name: "nul-byte", toolsDir: "tools\x00bin"},
 		} {
 			t.Run("invalid-tools-dir/"+tc.name, func(t *testing.T) {
 				badRoot, _ := u9Workspace(t)
@@ -975,6 +978,32 @@ host_prerequisites:
 				require.ErrorIs(t, loadErr, corerrors.ErrValidation)
 			})
 		}
+
+		t.Run("invalid-tools-dir/abs-in-workspace-and-casefold-direct", func(t *testing.T) {
+			badRoot, _ := u9Workspace(t)
+			u9Write(t, badRoot, ".tools/bin/backlogit.exe", "pinned binary")
+			absToolsDir := filepath.Join(badRoot, ".tools", "bin")
+
+			rootHandle, openErr := os.OpenRoot(badRoot)
+			require.NoError(t, openErr)
+			t.Cleanup(func() { require.NoError(t, rootHandle.Close()) })
+
+			for _, candidate := range []string{absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt", "tools\x00bin"} {
+				_, directErr := validManifestToolsDir(rootHandle, badRoot, candidate)
+				require.ErrorIs(t, directErr, corerrors.ErrValidation, "validManifestToolsDir must reject %q", candidate)
+
+				m := u9PinnedWorkspace(t, badRoot)
+				m.ToolsDir = candidate
+				_, verifyErr := VerifyWorkspaceToolchain(ctx, badRoot, m)
+				require.ErrorIs(t, verifyErr, corerrors.ErrValidation, "VerifyWorkspaceToolchain must reject tools_dir %q", candidate)
+
+				quotedDir, qErr := json.Marshal(candidate)
+				require.NoError(t, qErr)
+				u9Write(t, badRoot, ".backlogit/toolchain.yaml", buildManifestYAML(badRoot, fmt.Sprintf("tools_dir: %s\n", string(quotedDir)), "./.tools/bin/backlogit.exe"))
+				_, loadErr := LoadToolchainManifest(badRoot)
+				require.ErrorIs(t, loadErr, corerrors.ErrValidation, "LoadToolchainManifest must reject tools_dir %q", candidate)
+			}
+		})
 	})
 
 	t.Run("unsafe-backlogit-paths-rejected", func(t *testing.T) {

@@ -449,4 +449,35 @@ $companion = (Get-Command "engram")
 			})
 		}
 	})
+
+	t.Run("effective-tools-dir-normalizes-relative-workspace-root-and-casefold-reserved", func(t *testing.T) {
+		absCwd, err := filepath.Abs(".")
+		require.NoError(t, err)
+		m := &ToolchainManifest{
+			WorkspaceRoot: ".",
+			Tools: []ToolEntry{
+				{
+					ID:               "backlogit",
+					ContainmentClass: WorkspaceLocalPinned,
+					ExecutablePath:   filepath.Join(absCwd, ".tools", "bin", "backlogit.exe"),
+				},
+			},
+		}
+		assert.Equal(t, ".tools/bin", effectiveManifestToolsDir(m))
+		f := toolRemediation(ToolVerificationFinding{ToolID: "backlogit", Status: "violation"}, m)
+		assert.Contains(t, f.Remediation, "./.tools/bin/backlogit.exe")
+
+		reserved := &ToolchainManifest{
+			WorkspaceRoot: ".",
+			ToolsDir:      ".GIT/bin",
+			Tools: []ToolEntry{
+				{
+					ID:               "backlogit",
+					ContainmentClass: WorkspaceLocalPinned,
+					ExecutablePath:   ".Backlog/backlogit.exe",
+				},
+			},
+		}
+		assert.Equal(t, ".bin", effectiveManifestToolsDir(reserved))
+	})
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -555,6 +557,9 @@ func resolveMCPJSONDaemonBinaryRel(root *os.Root, absWorkspace string) (string, 
 	if err != nil {
 		return "", false, err
 	}
+	if err := scanDaemonJSON(data); err != nil {
+		return "", false, err
+	}
 	var cfg daemonMCPJSONConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return "", false, mcpDaemonValidationError("decode .mcp.json: %v", err)
@@ -661,6 +666,9 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return "", false, mcpDaemonValidationError("parse toolchain.yaml: %v", err)
 	}
+	if err := validateDaemonYAMLKeys(&doc); err != nil {
+		return "", false, err
+	}
 	var manifest daemonToolchainManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
 		return "", false, mcpDaemonValidationError("decode toolchain.yaml: %v", err)
@@ -683,6 +691,9 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 	}
 	if len(backlogitTools) > 1 {
 		return "", false, mcpDaemonValidationError("ambiguous multiple backlogit entries in toolchain.yaml")
+	}
+	if len(backlogitTools) == 1 && strings.TrimSpace(backlogitTools[0].ContainmentClass) != "workspace-local-pinned" {
+		return "", false, mcpDaemonValidationError("toolchain.yaml backlogit entry must have containment_class workspace-local-pinned, got %q", backlogitTools[0].ContainmentClass)
 	}
 
 	var execRel string
@@ -740,12 +751,101 @@ func hasYAMLMappingKey(doc *yaml.Node, key string) bool {
 		return false
 	}
 	mapping := doc.Content[0]
+	foldedTarget := foldDaemonKey(key)
 	for i := 0; i < len(mapping.Content); i += 2 {
-		if strings.EqualFold(mapping.Content[i].Value, key) {
+		if foldDaemonKey(mapping.Content[i].Value) == foldedTarget {
 			return true
 		}
 	}
 	return false
+}
+
+func foldDaemonKey(s string) string {
+	runes := []rune(s)
+	for i, r := range runes {
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < runes[i] {
+				runes[i] = f
+			}
+		}
+	}
+	return string(runes)
+}
+
+func validateDaemonYAMLKeys(node *yaml.Node) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.MappingNode {
+		seen := make(map[string]bool)
+		for i := 0; i < len(node.Content); i += 2 {
+			rawKey := node.Content[i].Value
+			key := foldDaemonKey(rawKey)
+			if seen[key] {
+				return mcpDaemonValidationError("duplicate YAML key %q in toolchain.yaml", rawKey)
+			}
+			seen[key] = true
+		}
+	}
+	for _, child := range node.Content {
+		if err := validateDaemonYAMLKeys(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func scanDaemonJSON(data []byte) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	var value func(int) error
+	value = func(depth int) error {
+		if depth > 10000 {
+			return mcpDaemonValidationError("JSON nesting too deep in .mcp.json")
+		}
+		token, err := d.Token()
+		if err != nil {
+			return mcpDaemonValidationError("scan .mcp.json: %v", err)
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		if delim != '{' && delim != '[' {
+			return mcpDaemonValidationError("unexpected JSON delimiter in .mcp.json")
+		}
+		seen := make(map[string]bool)
+		for d.More() {
+			if delim == '{' {
+				key, err := d.Token()
+				if err != nil {
+					return mcpDaemonValidationError("scan .mcp.json key: %v", err)
+				}
+				name, ok := key.(string)
+				if !ok {
+					return mcpDaemonValidationError("non-string JSON key in .mcp.json")
+				}
+				folded := foldDaemonKey(name)
+				if seen[folded] {
+					return mcpDaemonValidationError("duplicate JSON key %q in .mcp.json", name)
+				}
+				seen[folded] = true
+			}
+			if err := value(depth + 1); err != nil {
+				return err
+			}
+		}
+		if _, err := d.Token(); err != nil {
+			return mcpDaemonValidationError("scan .mcp.json end delimiter: %v", err)
+		}
+		return nil
+	}
+	if err := value(0); err != nil {
+		return err
+	}
+	if _, err := d.Token(); !errors.Is(err, io.EOF) {
+		return mcpDaemonValidationError("trailing JSON data in .mcp.json")
+	}
+	return nil
 }
 
 func isBacklogitDaemonCommand(command string) bool {

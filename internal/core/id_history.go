@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -1180,8 +1181,7 @@ func scanLocalBranchArtifactIDsContext(parentCtx context.Context, ws *Workspace)
 	sort.Strings(fpLines)
 	fingerprint := strings.Join(fpLines, ";")
 	if cached, ok := branchIDScanCache.Load(realRoot); ok {
-		entry := cached.(branchIDCacheEntry)
-		if entry.fingerprint == fingerprint {
+		if entry, ok := cached.(branchIDCacheEntry); ok && entry.fingerprint == fingerprint {
 			return append([]string(nil), entry.ids...), nil
 		}
 	}
@@ -1289,10 +1289,14 @@ func readGitCatFileBatch(
 		if len(fields) != 3 {
 			return nil, fmt.Errorf("unexpected git cat-file --batch header %q", header)
 		}
+		const maxGitCatFileObjectBytes = 64 << 20
 		oid, objType, sizeStr := fields[0], fields[1], fields[2]
 		size, err := strconv.ParseInt(sizeStr, 10, 64)
-		if err != nil || size < 0 {
+		if err != nil {
 			return nil, fmt.Errorf("invalid git cat-file --batch size in %q: %w", header, err)
+		}
+		if size < 0 || size > maxGitCatFileObjectBytes {
+			return nil, fmt.Errorf("git cat-file --batch size %d in %q out of range (max %d): %w", size, header, maxGitCatFileObjectBytes, blerrors.ErrValidation)
 		}
 
 		_, alreadyParsed := parsedTrees[oid]
@@ -1359,7 +1363,7 @@ func parseGitTreePayload(
 				seenTrees[subOID] = struct{}{}
 				*nextSpecs = append(*nextSpecs, subOID)
 			}
-		} else if filepath.Ext(name) == ".md" {
+		} else if (mode == "100644" || mode == "100755") && path.Ext(name) == ".md" {
 			stem := strings.TrimSuffix(name, ".md")
 			if stem != "" {
 				if _, ok := seenIDs[stem]; !ok {

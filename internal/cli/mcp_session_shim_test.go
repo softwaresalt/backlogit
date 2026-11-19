@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -957,6 +958,68 @@ func TestU3_PinnedMCPDaemonBinaryHonorsMCPJsonToolsDirAndDotBinDefault(t *testin
 					assertNoDaemonRunning(t, root)
 				})
 			}
+
+			t.Run("mcp-json-duplicate-folded-key", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				raw := fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/%s","Command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`,
+					binaryName, binaryName, root)
+				require.NoError(t, os.WriteFile(filepath.Join(root, ".mcp.json"), []byte(raw), 0o600))
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("toolchain-yaml-backlogit-non-conformant", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				manifest := toolchain.ToolchainManifest{
+					SchemaVersion:              "1.0",
+					ContainmentLevel:           toolchain.Level1WorkspaceLocalPinned,
+					OSContainerSandboxDeferred: true,
+					WorkspaceRoot:              root,
+					ToolsDir:                   ".bin",
+					Tools: []toolchain.ToolEntry{
+						{
+							ID:               "backlogit",
+							Kind:             "mcp",
+							ContainmentClass: toolchain.NonConformant,
+							ExecutablePath:   "./.bin/" + binaryName,
+						},
+					},
+					HostPrerequisites: []toolchain.HostPrerequisiteEntry{},
+				}
+				manifestBytes, err := yaml.Marshal(manifest)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(root, ".backlogit", "toolchain.yaml"), manifestBytes, 0o600))
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
+
+			t.Run("toolchain-yaml-duplicate-folded-key", func(t *testing.T) {
+				root := u3Workspace(t)
+				setupDecoys(t, root)
+				quotedRoot, err := json.Marshal(root)
+				require.NoError(t, err)
+				body := fmt.Sprintf("schema_version: \"1.0\"\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: %s\ntools_dir: \".bin\"\nTools_Dir: \".bin\"\ntools: []\nhost_prerequisites: []\n", string(quotedRoot))
+				require.NoError(t, os.WriteFile(filepath.Join(root, ".backlogit", "toolchain.yaml"), []byte(body), 0o600))
+
+				ctx, cancel := context.WithTimeout(t.Context(), u6Wait)
+				defer cancel()
+				status, err := PrewarmMCPDaemon(ctx, root, false, time.Minute)
+				assert.ErrorIs(t, err, corerrors.ErrValidation)
+				assert.False(t, status.Running)
+				assertNoDaemonRunning(t, root)
+			})
 		})
 	})
 

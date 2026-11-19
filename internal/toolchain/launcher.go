@@ -92,18 +92,34 @@ func AuditRepositoryToolchain(ctx context.Context, rootPath string) (*ToolchainV
 	return report, nil
 }
 
+func normalizedManifestWorkspaceRoot(m *ToolchainManifest) string {
+	if m == nil || strings.TrimSpace(m.WorkspaceRoot) == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(m.WorkspaceRoot); err == nil {
+		return abs
+	}
+	return m.WorkspaceRoot
+}
+
+func isReservedToolsDirSegment(seg string) bool {
+	return strings.EqualFold(seg, ".git") || strings.EqualFold(seg, ".backlog") || strings.EqualFold(seg, ".backlogit")
+}
+
 func effectiveManifestToolsDir(m *ToolchainManifest) string {
-	if m != nil && m.ToolsDir != "" && m.ToolsDir == strings.TrimSpace(m.ToolsDir) {
-		if relDir, err := relativePath(m.WorkspaceRoot, m.ToolsDir, false); err == nil && relDir != "." {
-			firstSeg, _, _ := strings.Cut(filepath.ToSlash(relDir), "/")
-			if !samePath(firstSeg, ".git") && !samePath(firstSeg, ".backlog") && !samePath(firstSeg, ".backlogit") {
+	workspaceRoot := normalizedManifestWorkspaceRoot(m)
+	if m != nil && m.ToolsDir != "" && m.ToolsDir == strings.TrimSpace(m.ToolsDir) &&
+		!strings.ContainsRune(m.ToolsDir, '\x00') && !filepath.IsAbs(m.ToolsDir) && filepath.VolumeName(m.ToolsDir) == "" {
+		if relDir, err := relativePath(workspaceRoot, m.ToolsDir, false); err == nil && relDir != "." {
+			firstSeg, _, _ := strings.Cut(strings.ReplaceAll(filepath.ToSlash(relDir), "\\", "/"), "/")
+			if !isReservedToolsDirSegment(firstSeg) {
 				return filepath.ToSlash(relDir)
 			}
 		}
 	}
 	if m != nil {
 		toolDir := func(execPath string) (string, bool) {
-			rel, err := relativePath(m.WorkspaceRoot, execPath, true)
+			rel, err := relativePath(workspaceRoot, execPath, true)
 			if err != nil {
 				return "", false
 			}
@@ -111,14 +127,14 @@ func effectiveManifestToolsDir(m *ToolchainManifest) string {
 			if dir == "." || dir == ".." {
 				return "", false
 			}
-			firstSeg, _, _ := strings.Cut(filepath.ToSlash(dir), "/")
-			if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+			firstSeg, _, _ := strings.Cut(strings.ReplaceAll(filepath.ToSlash(dir), "\\", "/"), "/")
+			if isReservedToolsDirSegment(firstSeg) {
 				return "", false
 			}
 			return filepath.ToSlash(dir), true
 		}
 		for _, tool := range m.Tools {
-			if isBacklogitTool(m.WorkspaceRoot, tool) {
+			if isBacklogitTool(workspaceRoot, tool) {
 				if dir, ok := toolDir(tool.ExecutablePath); ok {
 					return dir
 				}
@@ -153,9 +169,10 @@ func toolRemediation(f ToolVerificationFinding, m *ToolchainManifest) ToolVerifi
 	prefix := "./" + toolsDir + "/"
 	path := ""
 	if m != nil {
+		workspaceRoot := normalizedManifestWorkspaceRoot(m)
 		for _, tool := range m.Tools {
 			if strings.EqualFold(tool.ID, f.ToolID) {
-				rel, err := relativePath(m.WorkspaceRoot, tool.ExecutablePath, true)
+				rel, err := relativePath(workspaceRoot, tool.ExecutablePath, true)
 				if err == nil {
 					relSlash := filepath.ToSlash(rel)
 					if strings.HasPrefix(relSlash, toolsDir+"/") ||

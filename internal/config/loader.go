@@ -27,6 +27,14 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if err := validateRawConfigToolsDir(&doc); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
+
 	var cfg WorkspaceConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -93,6 +101,27 @@ func Load(_ context.Context, workspacePath string) (*WorkspaceConfig, error) {
 
 	logger.Info("config loaded", "workspace", workspacePath)
 	return &cfg, nil
+}
+
+func validateRawConfigToolsDir(doc *yaml.Node) error {
+	if doc == nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	mapping := doc.Content[0]
+	for i := 0; i < len(mapping.Content); i += 2 {
+		keyNode := mapping.Content[i]
+		valNode := mapping.Content[i+1]
+		if !strings.EqualFold(keyNode.Value, "tools_dir") {
+			continue
+		}
+		if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
+			return fmt.Errorf("tools_dir must be a non-empty string: %w", corerrors.ErrValidation)
+		}
+		if err := validateWorkspaceToolsDir(valNode.Value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureContainedRelPath rejects an absolute path or a lexical `..` escape in a

@@ -11,6 +11,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 func TestLoad_ValidConfig(t *testing.T) {
@@ -237,4 +238,92 @@ func TestWriteDefaults_CreatesFiles(t *testing.T) {
 	assert.FileExists(t, filepath.Join(ws, "registry.yaml"))
 	assert.FileExists(t, filepath.Join(ws, "stash.jsonl"))
 	assert.FileExists(t, filepath.Join(ws, "templates", "deliberation.md"))
+}
+
+func TestWorkspaceConfig_ToolsDirValidation(t *testing.T) {
+	t.Run("direct-validate", func(t *testing.T) {
+		absDir := filepath.Join(t.TempDir(), "tools")
+		cases := []struct {
+			name     string
+			toolsDir string
+			wantErr  bool
+		}{
+			{name: "valid-dot-tools-bin", toolsDir: ".tools/bin"},
+			{name: "valid-dot-bin", toolsDir: ".bin"},
+			{name: "valid-nested", toolsDir: "custom/tools"},
+			{name: "whitespace-only", toolsDir: "   ", wantErr: true},
+			{name: "leading-whitespace", toolsDir: " .tools", wantErr: true},
+			{name: "trailing-whitespace", toolsDir: ".tools ", wantErr: true},
+			{name: "nul-byte", toolsDir: "tools\x00bin", wantErr: true},
+			{name: "traversal", toolsDir: "../outside", wantErr: true},
+			{name: "dot", toolsDir: ".", wantErr: true},
+			{name: "absolute", toolsDir: absDir, wantErr: true},
+			{name: "volume-name", toolsDir: "C:tools", wantErr: true},
+			{name: "dot-git", toolsDir: ".git", wantErr: true},
+			{name: "dot-git-upper", toolsDir: ".GIT/hooks", wantErr: true},
+			{name: "dot-backlog", toolsDir: ".backlog", wantErr: true},
+			{name: "dot-backlog-mixed", toolsDir: ".Backlog/sub", wantErr: true},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := config.DefaultConfig()
+				cfg.ToolsDir = tc.toolsDir
+				err := cfg.Validate()
+				if tc.wantErr {
+					require.ErrorIs(t, err, corerrors.ErrValidation)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	})
+
+	t.Run("config-load", func(t *testing.T) {
+		baseConfigYAML := `artifact_types:
+  task:
+    prefix: T
+    name_format: "{prefix}{NNN}-{title_slug}"
+    allowed_children: []
+fields:
+  status:
+    type: enum
+    values: [todo, in_progress, done]
+    default: todo
+max_slug_length: 60
+`
+		t.Run("accepts-valid-tools-dir", func(t *testing.T) {
+			ws := filepath.Join(t.TempDir(), ".backlogit")
+			require.NoError(t, os.MkdirAll(ws, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(ws, "config.yaml"), []byte(baseConfigYAML+"tools_dir: \".tools/bin\"\n"), 0o644))
+
+			cfg, err := config.Load(context.Background(), ws)
+			require.NoError(t, err)
+			assert.Equal(t, ".tools/bin", cfg.ToolsDir)
+		})
+
+		invalidYAML := []struct {
+			name       string
+			storageDir string
+			extraYAML  string
+		}{
+			{name: "explicit-blank", storageDir: ".backlogit", extraYAML: "tools_dir: \"\"\n"},
+			{name: "whitespace-only", storageDir: ".backlogit", extraYAML: "tools_dir: \"   \"\n"},
+			{name: "explicit-null", storageDir: ".backlogit", extraYAML: "tools_dir: null\n"},
+			{name: "empty-scalar", storageDir: ".backlogit", extraYAML: "tools_dir:\n"},
+			{name: "non-string-int", storageDir: ".backlogit", extraYAML: "tools_dir: 123\n"},
+			{name: "non-string-seq", storageDir: ".backlogit", extraYAML: "tools_dir: [bin]\n"},
+			{name: "storage-dir-dot-backlogit", storageDir: ".backlogit", extraYAML: "tools_dir: \".backlogit\"\n"},
+			{name: "storage-dir-dot-backlog", storageDir: ".backlog", extraYAML: "tools_dir: \".backlog\"\n"},
+		}
+		for _, tc := range invalidYAML {
+			t.Run(tc.name, func(t *testing.T) {
+				ws := filepath.Join(t.TempDir(), tc.storageDir)
+				require.NoError(t, os.MkdirAll(ws, 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(ws, "config.yaml"), []byte(baseConfigYAML+tc.extraYAML), 0o644))
+
+				_, err := config.Load(context.Background(), ws)
+				require.ErrorIs(t, err, corerrors.ErrValidation)
+			})
+		}
+	})
 }
