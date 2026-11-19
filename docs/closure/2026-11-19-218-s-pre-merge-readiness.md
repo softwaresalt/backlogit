@@ -11,7 +11,7 @@ docline:
   mode: pre-merge
   shipment_id: 218-S
   feature_id: 217-F
-  evidence_head: c8523d6e
+  evidence_head: 7e0dc358
   closure_status: READY
   compaction_status: pending
 ---
@@ -32,7 +32,7 @@ Shipment `218-S` (`217-F`: Honor `.mcp.json`, configurable `tools_dir`, and `.bi
 
 See [218-S pre-merge runtime verification](2026-11-19-218-s-pre-merge-runtime-verification.md):
 
-* Verdict: `PASS` (`cli` adapter against `.\backlogit.exe`: Probe 1 `.bin` prewarm/status/stop, Probe 2 `custom-bin` `tools_dir` strict toolchain audit + prewarm/stop, Probe 3 120-branch `backlogit add` in `431ms`, and full Go test suite at `c8523d6e`).
+* Verdict: `PASS` (`cli` adapter against `.\backlogit.exe`: Probe 1 `.bin` prewarm/status/stop, Probe 2 `custom-bin` `tools_dir` strict toolchain audit + prewarm/stop, Probe 3 120-branch `backlogit add` in `431ms`, and full Go test suite at `7e0dc358`).
 
 ## Risky action record
 
@@ -56,6 +56,13 @@ See [218-S pre-merge runtime verification](2026-11-19-218-s-pre-merge-runtime-ve
 ## Source artifact provenance
 
 Feature `217-F` records `source_stash_id: 2CCDFDED` and `source_deliberation_id: 102-DL` (`docs/decisions/2026-11-19-mcp-daemon-configurable-tools-dir-deliberation.md`). Companion deferred stash entry `85442104` remains queued for Stage disposition.
+
+## Tracked residual risks and P-021 C2 deferrals
+
+* Out-of-scope P-021 C2 `DEFERRED SCOPE EXPANSION` stash entries captured in `.backlogit/stash.jsonl` from local review (`mode: report-only`) for Stage triage:
+  * **`F1D193CC`**: Align `AuditRepositoryToolchain` / `internal/toolchain` with `pinnedMCPDaemonBinary` (read `<storage>/config.yaml` `tools_dir`, share `.mcp.json`/`toolchain.yaml` parsing and pinned child `*os.Root` traversal, and relocate `WorkspaceRootCandidates` below `internal/core` so `WorkspaceConfig.Validate()` rejects `.backlogit` independently of `config.Load`).
+  * **`618AA1C0`**: Bound pre-existing `io.ReadAll` calls with `io.LimitReader` in `internal/toolchain/verify.go`, `internal/toolchain/launcher.go`, and `internal/core/id_history.go` (`readIDSequenceLedger`).
+* Host dogfood binary `.bin\backlogit.exe` was locked during build by active MCP server processes (`PID 7816`, `PID 25480`); refresh after the active MCP session restarts.
 
 ## Structured releasability and compaction
 
