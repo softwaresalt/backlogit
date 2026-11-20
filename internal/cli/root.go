@@ -313,6 +313,188 @@ func applyLogLevel(level string) {
 	slog.SetDefault(slog.New(h))
 }
 
+func writeBootstrapFileIfNotExistsInRoot(dstHandle *os.Root, dstDirAbs, relName string, data []byte) error {
+	targetAbs := filepath.Join(dstDirAbs, relName)
+	info, statErr := dstHandle.Lstat(relName)
+	if statErr == nil {
+		isLink, linkErr := core.IsSymlinkOrReparsePoint(info, targetAbs)
+		if linkErr != nil || isLink || info.Mode()&os.ModeIrregular != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("bootstrap target %s is redirected or not a regular file: %w", targetAbs, corerrors.ErrValidation)
+		}
+		return nil
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("inspect bootstrap target %s: %w", targetAbs, statErr)
+	}
+
+	f, err := dstHandle.OpenFile(relName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return fmt.Errorf("create bootstrap target %s: %w", targetAbs, err)
+	}
+	fClosed := false
+	defer func() {
+		if !fClosed {
+			_ = f.Close()
+		}
+	}()
+	openedStat, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat bootstrap target %s: %w", targetAbs, err)
+	}
+	lstatStat, err := dstHandle.Lstat(relName)
+	if err != nil || !os.SameFile(openedStat, lstatStat) {
+		return fmt.Errorf("bootstrap target %s identity changed after open: %w", targetAbs, corerrors.ErrValidation)
+	}
+	written := 0
+	for written < len(data) {
+		n, wErr := f.Write(data[written:])
+		if wErr != nil {
+			return fmt.Errorf("write bootstrap target %s: %w", targetAbs, wErr)
+		}
+		if n == 0 {
+			return fmt.Errorf("short write to bootstrap target %s: %w", targetAbs, io.ErrShortWrite)
+		}
+		written += n
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync bootstrap target %s: %w", targetAbs, err)
+	}
+	fClosed = true
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close bootstrap target %s: %w", targetAbs, err)
+	}
+	return nil
+}
+
+func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, storageDirName string) error {
+	if initBeforeWriteDefaultsHook != nil {
+		initBeforeWriteDefaultsHook()
+	}
+
+	wsStat, err := wsRoot.Stat(".")
+	if err != nil {
+		return fmt.Errorf("stat workspace root before defaults: %w", err)
+	}
+	storageStat, err := storageHandle.Stat(".")
+	if err != nil {
+		return fmt.Errorf("stat storage root before defaults: %w", err)
+	}
+
+	_, recheckWS, recheckErr := openOrCreateValidatedWorkspaceRoot(cleanRoot, false)
+	if recheckErr != nil {
+		if errors.Is(recheckErr, corerrors.ErrValidation) {
+			return recheckErr
+		}
+		return fmt.Errorf("re-verify workspace root before defaults: %w", errors.Join(corerrors.ErrValidation, recheckErr))
+	}
+	defer func() { _ = recheckWS.Close() }()
+
+	recheckWSStat, err := recheckWS.Stat(".")
+	if err != nil || !os.SameFile(wsStat, recheckWSStat) {
+		return fmt.Errorf("workspace root %s identity changed before writing defaults: %w", cleanRoot, corerrors.ErrValidation)
+	}
+
+	storageAbs := filepath.Join(cleanRoot, storageDirName)
+	recheckStorageInfo, err := recheckWS.Lstat(storageDirName)
+	if err != nil {
+		return fmt.Errorf("re-inspect storage dir %s before defaults: %w", storageAbs, errors.Join(corerrors.ErrValidation, err))
+	}
+	storageLink, linkErr := core.IsSymlinkOrReparsePoint(recheckStorageInfo, storageAbs)
+	if linkErr != nil || storageLink || recheckStorageInfo.Mode()&os.ModeIrregular != 0 || !recheckStorageInfo.IsDir() {
+		return fmt.Errorf("storage dir %s is redirected or not a directory: %w", storageAbs, corerrors.ErrValidation)
+	}
+	recheckStorage, err := recheckWS.OpenRoot(storageDirName)
+	if err != nil {
+		return fmt.Errorf("re-open storage dir %s before defaults: %w", storageAbs, errors.Join(corerrors.ErrValidation, err))
+	}
+	defer func() { _ = recheckStorage.Close() }()
+	recheckStorageStat, err := recheckStorage.Stat(".")
+	if err != nil || !os.SameFile(storageStat, recheckStorageStat) {
+		return fmt.Errorf("storage dir %s identity changed before writing defaults: %w", storageAbs, corerrors.ErrValidation)
+	}
+
+	var templatesHandle *os.Root
+	defer func() {
+		if templatesHandle != nil {
+			_ = templatesHandle.Close()
+		}
+	}()
+	for _, sub := range []string{"logs", "queue", "templates"} {
+		subAbs := filepath.Join(storageAbs, sub)
+		subInfo, subErr := storageHandle.Lstat(sub)
+		if errors.Is(subErr, os.ErrNotExist) {
+			if mkErr := storageHandle.Mkdir(sub, 0o755); mkErr != nil {
+				return fmt.Errorf("create storage subdir %s: %w", subAbs, mkErr)
+			}
+			subInfo, subErr = storageHandle.Lstat(sub)
+		}
+		if subErr != nil {
+			return fmt.Errorf("inspect storage subdir %s: %w", subAbs, subErr)
+		}
+		subLink, linkErr := core.IsSymlinkOrReparsePoint(subInfo, subAbs)
+		if linkErr != nil || subLink || subInfo.Mode()&os.ModeIrregular != 0 || !subInfo.IsDir() {
+			return fmt.Errorf("storage subdir %s is redirected or not a directory: %w", subAbs, corerrors.ErrValidation)
+		}
+		subHandle, openSubErr := storageHandle.OpenRoot(sub)
+		if openSubErr != nil {
+			return fmt.Errorf("open storage subdir %s: %w", subAbs, openSubErr)
+		}
+		openedSub, statSubErr := subHandle.Stat(".")
+		if statSubErr != nil || !os.SameFile(subInfo, openedSub) {
+			_ = subHandle.Close()
+			return fmt.Errorf("storage subdir %s identity changed after open: %w", subAbs, corerrors.ErrValidation)
+		}
+		if sub == "templates" {
+			templatesHandle = subHandle
+		} else {
+			if closeErr := subHandle.Close(); closeErr != nil {
+				return fmt.Errorf("close storage subdir %s: %w", subAbs, closeErr)
+			}
+		}
+	}
+
+	tmpDefaultsDir, err := os.MkdirTemp("", "backlogit-init-defaults-*")
+	if err != nil {
+		return fmt.Errorf("create defaults staging dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDefaultsDir) }()
+
+	if err := config.WriteDefaults(tmpDefaultsDir); err != nil {
+		return fmt.Errorf("render defaults: %w", err)
+	}
+	if err := config.WriteMigrationDefaults(tmpDefaultsDir); err != nil {
+		return fmt.Errorf("render migration defaults: %w", err)
+	}
+
+	for _, name := range []string{"config.yaml", "registry.yaml", "header-def.yaml", "stash.jsonl", "hooks.yaml", "migration.yaml"} {
+		data, readErr := os.ReadFile(filepath.Join(tmpDefaultsDir, name))
+		if readErr != nil {
+			return fmt.Errorf("read staged default %s: %w", name, readErr)
+		}
+		if err := writeBootstrapFileIfNotExistsInRoot(storageHandle, storageAbs, name, data); err != nil {
+			return err
+		}
+	}
+
+	templatesAbs := filepath.Join(storageAbs, "templates")
+	tplEntries, err := os.ReadDir(filepath.Join(tmpDefaultsDir, "templates"))
+	if err != nil {
+		return fmt.Errorf("list staged templates: %w", err)
+	}
+	for _, entry := range tplEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(tmpDefaultsDir, "templates", entry.Name()))
+		if readErr != nil {
+			return fmt.Errorf("read staged template %s: %w", entry.Name(), readErr)
+		}
+		if err := writeBootstrapFileIfNotExistsInRoot(templatesHandle, templatesAbs, entry.Name(), data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newInitCommand(cwd *string) *cobra.Command {
 	return &cobra.Command{
 		Use:     "init [path]",
@@ -334,66 +516,90 @@ file, default YAML configuration files, and default artifact templates.`,
 				return fmt.Errorf("resolve workspace root: %w", err)
 			}
 			cleanRoot := filepath.Clean(absRoot)
-			// Guard cleaned target root against symlink or reparse-point redirection
-			// (including trailing-slash symlink dereferencing on POSIX) before
-			// creating or modifying workspace storage directories.
-			if rootInfo, rootStatErr := os.Lstat(cleanRoot); rootStatErr == nil {
-				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(rootInfo, cleanRoot)
-				if inspectErr != nil {
-					return fmt.Errorf("inspect workspace root: %w", inspectErr)
-				}
-				if isReparse || !rootInfo.IsDir() {
-					return fmt.Errorf("workspace root %s is redirected or not a directory", cleanRoot)
-				}
-			} else if !os.IsNotExist(rootStatErr) {
-				return fmt.Errorf("inspect workspace root: %w", rootStatErr)
+
+			validatedRoot, wsRoot, err := openOrCreateValidatedWorkspaceRoot(cleanRoot, true)
+			if err != nil {
+				return err
 			}
-			root = cleanRoot
+			wsClosed := false
+			defer func() {
+				if !wsClosed {
+					_ = wsRoot.Close()
+				}
+			}()
+			cleanRoot = validatedRoot
+
 			storageDirName := core.WorkspaceRootCandidates()[0]
 			if cmd.CalledAs() == "install" {
-				resolvedDir, err := resolveInstallStorageDir(root)
+				resolvedDir, err := resolveInstallStorageDir(cleanRoot)
 				if err != nil {
 					return err
 				}
 				storageDirName = resolvedDir
 			} else {
-				legacyDir := filepath.Join(root, core.WorkspaceRootCandidates()[1])
-				if info, err := os.Stat(legacyDir); err == nil && info.IsDir() {
-					return fmt.Errorf("workspace already exists at .backlogit; use 'backlogit migrate --workspace-dir' to rename it to .backlog")
-				} else if err != nil && !os.IsNotExist(err) {
+				legacyName := core.WorkspaceRootCandidates()[1]
+				if info, err := wsRoot.Lstat(legacyName); err == nil {
+					legacyLink, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(cleanRoot, legacyName))
+					if linkErr == nil && !legacyLink && info.IsDir() {
+						return fmt.Errorf("workspace already exists at .backlogit; use 'backlogit migrate --workspace-dir' to rename it to .backlog")
+					}
+					return fmt.Errorf("legacy workspace dir %s is redirected or not a directory: %w", legacyName, corerrors.ErrValidation)
+				} else if !errors.Is(err, os.ErrNotExist) {
 					return fmt.Errorf("stat legacy workspace dir: %w", err)
 				}
 			}
 
-			dir := filepath.Join(root, storageDirName)
-			// Guard against writing through a symlink or Windows reparse point
-			// (junction) that may redirect workspace files outside the root.
-			if info, statErr := os.Lstat(dir); statErr == nil {
-				isReparse, inspectErr := core.IsSymlinkOrReparsePoint(info, dir)
-				if inspectErr != nil {
-					return fmt.Errorf("inspect workspace dir: %w", inspectErr)
+			dir := filepath.Join(cleanRoot, storageDirName)
+			storageInfo, statErr := wsRoot.Lstat(storageDirName)
+			if errors.Is(statErr, os.ErrNotExist) {
+				if mkErr := wsRoot.Mkdir(storageDirName, 0o755); mkErr != nil {
+					return fmt.Errorf("create workspace dir: %w", mkErr)
 				}
-				if isReparse {
-					return fmt.Errorf("workspace dir %s is a symlink or reparse point; remove it before initializing", dir)
+				storageInfo, statErr = wsRoot.Lstat(storageDirName)
+			}
+			if statErr != nil {
+				return fmt.Errorf("inspect workspace dir: %w", statErr)
+			}
+			isReparse, inspectErr := core.IsSymlinkOrReparsePoint(storageInfo, dir)
+			if inspectErr != nil {
+				return fmt.Errorf("inspect workspace dir: %w", inspectErr)
+			}
+			if isReparse || storageInfo.Mode()&os.ModeIrregular != 0 || !storageInfo.IsDir() {
+				return fmt.Errorf("workspace dir %s is redirected or not a directory: %w", dir, corerrors.ErrValidation)
+			}
+			storageHandle, err := wsRoot.OpenRoot(storageDirName)
+			if err != nil {
+				return fmt.Errorf("open workspace dir: %w", err)
+			}
+			storageClosed := false
+			defer func() {
+				if !storageClosed {
+					_ = storageHandle.Close()
 				}
+			}()
+			openedStorage, err := storageHandle.Stat(".")
+			if err != nil || !os.SameFile(storageInfo, openedStorage) {
+				return fmt.Errorf("workspace dir %s identity changed after open: %w", dir, corerrors.ErrValidation)
 			}
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return fmt.Errorf("create workspace dir: %w", err)
+
+			if err := writeWorkspaceBootstrapDefaults(wsRoot, storageHandle, cleanRoot, storageDirName); err != nil {
+				return err
 			}
-			if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o755); err != nil {
-				return fmt.Errorf("create logs dir: %w", err)
+
+			storageClosed = true
+			if err := storageHandle.Close(); err != nil {
+				return fmt.Errorf("close workspace dir: %w", err)
 			}
-			if err := config.WriteDefaults(dir); err != nil {
-				return fmt.Errorf("write defaults: %w", err)
+			wsClosed = true
+			if err := wsRoot.Close(); err != nil {
+				return fmt.Errorf("close workspace root: %w", err)
 			}
-			if err := config.WriteMigrationDefaults(dir); err != nil {
-				return fmt.Errorf("write migration defaults: %w", err)
-			}
-			binName, err := installWorkspaceRuntimeExecutable(root, storageDirName)
+
+			binName, err := installWorkspaceRuntimeExecutable(cleanRoot, storageDirName)
 			if err != nil {
 				return fmt.Errorf("install workspace runtime executable: %w", err)
 			}
-			if err := ensureWorkspaceRuntimeIgnored(root, storageDirName, binName); err != nil {
+			if err := ensureWorkspaceRuntimeIgnored(cleanRoot, storageDirName, binName); err != nil {
 				return fmt.Errorf("configure ignore rules for workspace runtime: %w", err)
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir); err != nil {

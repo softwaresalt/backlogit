@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -840,5 +841,142 @@ host_prerequisites:
 		assert.NoFileExists(t, filepath.Join(rollbackRoot, ".tools", "bin", binName))
 		gotOutside, _ := os.ReadFile(outsideFile)
 		assert.Equal(t, "untouched\n", string(gotOutside))
+	})
+}
+
+func TestU4a_InitBootstrapDefaultsContainmentAndSwapRefusal(t *testing.T) {
+	binName := "backlogit"
+	if runtime.GOOS == "windows" {
+		binName = "backlogit.exe"
+	}
+
+	createDirLink := func(t *testing.T, linkPath, targetPath string) {
+		t.Helper()
+		if runtime.GOOS == "windows" {
+			out, err := exec.Command("cmd", "/c", "mklink", "/J", linkPath, targetPath).CombinedOutput()
+			require.NoError(t, err, "mklink /J failed: %s", out)
+			return
+		}
+		require.NoError(t, os.Symlink(targetPath, linkPath))
+	}
+
+	t.Run("redirected_templates_or_bootstrap_targets_rejected_with_zero_outside_writes", func(t *testing.T) {
+		for _, sub := range []string{"templates", "queue", "logs"} {
+			t.Run("redirected-"+sub, func(t *testing.T) {
+				root := t.TempDir()
+				outside := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlog"), 0o755))
+				createDirLink(t, filepath.Join(root, ".backlog", sub), outside)
+
+				cwd := root
+				cmd := newInitCommand(&cwd)
+				var outBuf bytes.Buffer
+				cmd.SetOut(&outBuf)
+				cmd.SetErr(&outBuf)
+				err := cmd.Execute()
+				require.ErrorIs(t, err, corerrors.ErrValidation)
+
+				entries, readErr := os.ReadDir(outside)
+				require.NoError(t, readErr)
+				assert.Empty(t, entries, "redirected %s must receive zero writes", sub)
+			})
+		}
+
+		// Redirected bootstrap target file (e.g. config.yaml or migration.yaml) when file symlink is supported.
+		root := t.TempDir()
+		outsideFile := filepath.Join(t.TempDir(), "outside-config.yaml")
+		require.NoError(t, os.WriteFile(outsideFile, []byte("untouched\n"), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlog"), 0o755))
+		cfgLink := filepath.Join(root, ".backlog", "config.yaml")
+		if runtime.GOOS == "windows" {
+			if _, linkErr := exec.Command("cmd", "/c", "mklink", cfgLink, outsideFile).CombinedOutput(); linkErr != nil {
+				// Fallback directory-named target if Windows unprivileged file symlink is unavailable.
+				require.NoError(t, os.MkdirAll(cfgLink, 0o755))
+			}
+		} else {
+			require.NoError(t, os.Symlink(outsideFile, cfgLink))
+		}
+		cwd := root
+		cmd := newInitCommand(&cwd)
+		var outBuf bytes.Buffer
+		cmd.SetOut(&outBuf)
+		cmd.SetErr(&outBuf)
+		err := cmd.Execute()
+		require.ErrorIs(t, err, corerrors.ErrValidation)
+		gotOutside, readErr := os.ReadFile(outsideFile)
+		require.NoError(t, readErr)
+		assert.Equal(t, "untouched\n", string(gotOutside))
+	})
+
+	t.Run("defaults_phase_ancestor_and_storage_swap_via_hook_rejected_with_zero_outside_writes", func(t *testing.T) {
+		t.Run("storage-swap-before-defaults", func(t *testing.T) {
+			root := t.TempDir()
+			outside := t.TempDir()
+			storagePath := filepath.Join(root, ".backlog")
+			backupPath := storagePath + ".orig"
+
+			origHook := initBeforeWriteDefaultsHook
+			t.Cleanup(func() { initBeforeWriteDefaultsHook = origHook })
+			initBeforeWriteDefaultsHook = func() {
+				require.NoError(t, os.Rename(storagePath, backupPath))
+				createDirLink(t, storagePath, outside)
+			}
+
+			cwd := root
+			cmd := newInitCommand(&cwd)
+			var outBuf bytes.Buffer
+			cmd.SetOut(&outBuf)
+			cmd.SetErr(&outBuf)
+			err := cmd.Execute()
+			require.ErrorIs(t, err, corerrors.ErrValidation)
+
+			for _, forbidden := range []string{"config.yaml", "migration.yaml", binName} {
+				assert.NoFileExists(t, filepath.Join(outside, forbidden))
+			}
+			assert.NoDirExists(t, filepath.Join(outside, "templates"))
+		})
+
+		t.Run("ancestor-swap-before-defaults", func(t *testing.T) {
+			base := t.TempDir()
+			outside := t.TempDir()
+			ancestorDir := filepath.Join(base, "ancestor")
+			wsDir := filepath.Join(ancestorDir, "ws")
+			backupAncestor := ancestorDir + ".orig"
+			storagePath := filepath.Join(wsDir, ".backlog")
+			backupStorage := storagePath + ".orig"
+
+			origHook := initBeforeWriteDefaultsHook
+			t.Cleanup(func() { initBeforeWriteDefaultsHook = origHook })
+			initBeforeWriteDefaultsHook = func() {
+				if runtime.GOOS == "windows" {
+					// Windows NTFS blocks renaming an ancestor directory while a
+					// descendant *os.Root handle is open; confirm that lock and
+					// still exercise mid-flight storage swap via the hook.
+					require.Error(t, os.Rename(ancestorDir, backupAncestor))
+					require.NoError(t, os.Rename(storagePath, backupStorage))
+					createDirLink(t, storagePath, outside)
+					return
+				}
+				require.NoError(t, os.Rename(ancestorDir, backupAncestor))
+				createDirLink(t, ancestorDir, outside)
+			}
+
+			cwd := wsDir
+			cmd := newInitCommand(&cwd)
+			var outBuf bytes.Buffer
+			cmd.SetOut(&outBuf)
+			cmd.SetErr(&outBuf)
+			err := cmd.Execute()
+			require.ErrorIs(t, err, corerrors.ErrValidation)
+
+			assert.NoFileExists(t, filepath.Join(outside, "config.yaml"))
+			assert.NoFileExists(t, filepath.Join(outside, "migration.yaml"))
+			assert.NoFileExists(t, filepath.Join(outside, binName))
+			assert.NoDirExists(t, filepath.Join(outside, "templates"))
+			assert.NoFileExists(t, filepath.Join(outside, "ws", ".backlog", "config.yaml"))
+			assert.NoFileExists(t, filepath.Join(outside, "ws", ".backlog", "migration.yaml"))
+			assert.NoFileExists(t, filepath.Join(outside, "ws", ".backlog", binName))
+			assert.NoDirExists(t, filepath.Join(outside, "ws", ".backlog", "templates"))
+		})
 	})
 }
