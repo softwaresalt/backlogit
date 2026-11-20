@@ -761,8 +761,8 @@ host_prerequisites: []
 		require.NoError(t, epAuditErr)
 		assert.True(t, epAudit.Valid, "%+v", epAudit.Tools)
 
-		// Case 4: Migrating existing launchers to tools_dir with spaces or brackets succeeds.
-		for _, specialDir := range []string{"my tools", "tools[1]"} {
+		// Case 4: Migrating existing launchers to tools_dir with spaces, brackets, #, or ! succeeds.
+		for _, specialDir := range []string{"my tools", "tools[1]", "#tools", "!tools"} {
 			specialRoot := t.TempDir()
 			writeFile(t, specialRoot, "bin/"+binName, string(oldBytes))
 			writeFile(t, specialRoot, "start.ps1", launcherPS1("bin"))

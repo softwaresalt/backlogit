@@ -687,7 +687,7 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 		for _, f := range emptyPrereqFindings {
 			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must allow empty host_prerequisites: %+v", f)
 		}
-		for _, specialDir := range []string{"my tools", "tools[1]"} {
+		for _, specialDir := range []string{"my tools", "tools[1]", "#tools", "!tools"} {
 			specialManifest := newRelManifest(specialDir)
 			specialManifest.WorkspaceRoot = root
 			specialFindings, spErr := VerifyProposedLauncherScripts(root, specialManifest, []byte(launcherPS1(specialDir)), []byte(launcherSH(specialDir)))
