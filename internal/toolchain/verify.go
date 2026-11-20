@@ -157,6 +157,20 @@ func openLocal(root *os.Root, absRoot, rel string) (*os.File, error) {
 	return nil, fmt.Errorf("empty path: %w", blerrors.ErrValidation)
 }
 
+func resolveManifestWorkspaceRoot(abs, rawRoot string) (string, error) {
+	if rawRoot == "" || rawRoot != strings.TrimSpace(rawRoot) {
+		return "", fmt.Errorf("invalid workspace_root %q: %w", rawRoot, blerrors.ErrValidation)
+	}
+	if filepath.IsAbs(rawRoot) || filepath.VolumeName(rawRoot) != "" || hasDriveOrUNCPrefix(rawRoot) {
+		declared, err := filepath.Abs(rawRoot)
+		if err != nil {
+			return "", fmt.Errorf("resolve workspace_root %q: %w", rawRoot, blerrors.ErrValidation)
+		}
+		return filepath.Clean(declared), nil
+	}
+	return filepath.Clean(filepath.Join(abs, filepath.FromSlash(strings.ReplaceAll(rawRoot, "\\", "/")))), nil
+}
+
 func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	abs, root, err := workspace(rootPath)
 	if err != nil {
@@ -164,22 +178,38 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	}
 	defer func() { _ = root.Close() }()
 	storage := ""
-	for _, candidate := range []string{".backlog", ".backlogit"} {
-		if _, err := root.Lstat(candidate); err == nil {
-			if storage != "" {
-				return nil, fmt.Errorf("ambiguous workspace storage: %w", blerrors.ErrValidation)
+	if override, hasOverride := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); hasOverride && override != "" {
+		if override != ".backlog" && override != ".backlogit" {
+			return nil, fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q: %w", override, blerrors.ErrValidation)
+		}
+		info, statErr := root.Lstat(override)
+		if statErr == nil {
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(abs, override))
+			if linkErr != nil || link || !info.IsDir() || info.Mode()&os.ModeIrregular != 0 {
+				return nil, fmt.Errorf("invalid storage directory %s: %w", override, blerrors.ErrValidation)
 			}
-			storage = candidate
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("inspect storage: %w", err)
+			storage = override
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect storage: %w", statErr)
+		}
+	} else {
+		for _, candidate := range []string{".backlog", ".backlogit"} {
+			if _, err := root.Lstat(candidate); err == nil {
+				if storage != "" {
+					return nil, fmt.Errorf("ambiguous workspace storage: %w", blerrors.ErrValidation)
+				}
+				storage = candidate
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("inspect storage: %w", err)
+			}
 		}
 	}
 	if storage == "" {
-		return defaultWorkspaceToolchainManifest(rootPath), nil
+		return defaultWorkspaceToolchainManifest(abs), nil
 	}
 	file, err := openLocal(root, abs, filepath.Join(storage, "toolchain.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultWorkspaceToolchainManifest(rootPath), nil
+		return defaultWorkspaceToolchainManifest(abs), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open toolchain manifest: %w", err)
@@ -209,22 +239,22 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("additional YAML document: %w", blerrors.ErrValidation)
 	}
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.SchemaVersion != "1.0" || m.ContainmentLevel != Level1WorkspaceLocalPinned ||
 		!m.OSContainerSandboxDeferred || strings.TrimSpace(m.WorkspaceRoot) == "" ||
 		err != nil || !samePath(abs, declared) || m.Tools == nil || m.HostPrerequisites == nil {
 		return nil, fmt.Errorf("invalid manifest required fields: %w", blerrors.ErrValidation)
 	}
+	m.WorkspaceRoot = abs
 	if hasRawYAMLKey(&node, "tools_dir") || m.ToolsDir != "" {
+		if valNode, ok := findRawYAMLMappingNode(&node, "tools_dir"); ok {
+			if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
+				return nil, fmt.Errorf("invalid manifest tools_dir scalar type: %w", blerrors.ErrValidation)
+			}
+		}
 		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
 			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
 		}
-	}
-	if m.Tools == nil {
-		m.Tools = []ToolEntry{}
-	}
-	if m.HostPrerequisites == nil {
-		m.HostPrerequisites = []HostPrerequisiteEntry{}
 	}
 	for i := range m.Tools {
 		if m.Tools[i].WorkspaceBindingArgs == nil {
@@ -234,17 +264,22 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	return &m, nil
 }
 
-func hasRawYAMLKey(document *yaml.Node, key string) bool {
+func findRawYAMLMappingNode(document *yaml.Node, key string) (*yaml.Node, bool) {
 	if document == nil || len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return false
+		return nil, false
 	}
 	mapping := document.Content[0]
 	for i := 0; i < len(mapping.Content); i += 2 {
 		if foldJSONKey(mapping.Content[i].Value) == foldJSONKey(key) {
-			return true
+			return mapping.Content[i+1], true
 		}
 	}
-	return false
+	return nil, false
+}
+
+func hasRawYAMLKey(document *yaml.Node, key string) bool {
+	_, ok := findRawYAMLMappingNode(document, key)
+	return ok
 }
 
 func validateYAMLKeys(node *yaml.Node) error {
@@ -354,7 +389,7 @@ func isPinnedBacklogitRelPath(rel string) bool {
 		return false
 	}
 	firstSeg, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
-	if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+	if isReservedToolsDirSegment(firstSeg) {
 		return false
 	}
 	base := filepath.Base(rel)
@@ -375,8 +410,10 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
-	if strings.ContainsRune(toolsDir, '\x00') {
-		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	for _, r := range toolsDir {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+		}
 	}
 	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
@@ -387,7 +424,7 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	}
 	slashRel := strings.ReplaceAll(filepath.ToSlash(relDir), "\\", "/")
 	firstSeg, _, _ := strings.Cut(slashRel, "/")
-	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") || strings.EqualFold(firstSeg, ".backlogit") {
+	if isReservedToolsDirSegment(firstSeg) {
 		return "", fmt.Errorf("reserved tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
 	if !bindingWithin(root, abs, toolsDir) {
@@ -456,7 +493,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 		return nil, fmt.Errorf("verify toolchain: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.WorkspaceRoot == "" || err != nil || !samePath(abs, declared) {
 		return nil, fmt.Errorf("manifest workspace mismatch: %w", blerrors.ErrValidation)
 	}
@@ -741,7 +778,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		return nil, fmt.Errorf("validate MCP config: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.WorkspaceRoot == "" || err != nil || !samePath(abs, declared) {
 		return nil, fmt.Errorf("manifest workspace mismatch: %w", blerrors.ErrValidation)
 	}

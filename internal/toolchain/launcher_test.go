@@ -481,3 +481,282 @@ $companion = (Get-Command "engram")
 		assert.Equal(t, ".bin", effectiveManifestToolsDir(reserved))
 	})
 }
+
+func TestU2b_WriteAndValidateToolchainManifestWithRelativeWorkspaceRootAndDifferentCWD(t *testing.T) {
+	binBytes := []byte("pinned binary")
+	binSum := sha256.Sum256(binBytes)
+	binSumHex := hex.EncodeToString(binSum[:])
+
+	newRelManifest := func(execDir string) *ToolchainManifest {
+		return &ToolchainManifest{
+			SchemaVersion:              "1.0",
+			ContainmentLevel:           Level1WorkspaceLocalPinned,
+			OSContainerSandboxDeferred: true,
+			WorkspaceRoot:              ".",
+			ToolsDir:                   execDir,
+			Tools: []ToolEntry{
+				{
+					ID:                   "backlogit",
+					Kind:                 "mcp",
+					ContainmentClass:     WorkspaceLocalPinned,
+					ExecutablePath:       "./" + execDir + "/backlogit.exe",
+					PinnedVersion:        "1.0.0",
+					SHA256:               binSumHex,
+					WorkspaceBindingArgs: []string{"--cwd", "."},
+				},
+			},
+			HostPrerequisites: []HostPrerequisiteEntry{
+				{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+			},
+		}
+	}
+
+	launcherPS1 := func(execDir string) string {
+		return fmt.Sprintf(`$workspaceRoot = $PSScriptRoot
+$workspaceBinDirectory = Join-Path $workspaceRoot %q
+$backlogitPath = Join-Path $workspaceBinDirectory "backlogit.exe"
+if (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw "Missing ./%s/backlogit.exe" }
+$env:COPILOT_HOME = Join-Path $workspaceRoot ".copilot"
+$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot ".engram"
+& $backlogitPath --cwd $workspaceRoot mcp status
+`, execDir, execDir)
+	}
+
+	launcherSH := func(execDir string) string {
+		return fmt.Sprintf(`#!/bin/sh
+workspace_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+workspace_bin_directory="$workspace_root/%s"
+backlogit_path="$workspace_bin_directory/backlogit.exe"
+if [ ! -f "$backlogit_path" ]; then echo "Missing ./%s/backlogit.exe" >&2; exit 1; fi
+export COPILOT_HOME="$workspace_root/.copilot"
+export ENGRAM_DATA_DIR="$workspace_root/.engram"
+"$backlogit_path" --cwd "$workspace_root" mcp status
+`, execDir, execDir)
+	}
+
+	t.Run("relative_workspace_root_dot_and_dual_root_override_succeed_from_different_cwd", func(t *testing.T) {
+		// Single-root workspace with BACKLOGIT_WORKSPACE_DIR=""
+		singleRoot, otherDir := u9Workspace(t)
+		u9Write(t, singleRoot, ".bin/backlogit.exe", string(binBytes))
+		u9Write(t, singleRoot, "start.ps1", launcherPS1(".bin"))
+		u9Write(t, singleRoot, "start.sh", launcherSH(".bin"))
+		u9Write(t, singleRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, singleRoot))
+
+		t.Chdir(otherDir)
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+		manifest := newRelManifest(".bin")
+		wsHandle, openErr := os.OpenRoot(singleRoot)
+		require.NoError(t, openErr)
+		t.Cleanup(func() { _ = wsHandle.Close() })
+
+		require.NoError(t, validateManifestForProvisioning(wsHandle, singleRoot, manifest))
+		storageName, storageErr := resolveProvisioningStorageDir(wsHandle)
+		require.NoError(t, storageErr)
+		assert.Equal(t, ".backlogit", storageName)
+
+		require.NoError(t, WriteToolchainManifest(singleRoot, manifest))
+		findings, verifyErr := VerifyLauncherScripts(singleRoot)
+		require.NoError(t, verifyErr)
+		for _, f := range findings {
+			assert.NotEqual(t, "violation", f.Status, "%+v", f)
+		}
+		auditReport, auditErr := AuditRepositoryToolchain(context.Background(), singleRoot)
+		require.NoError(t, auditErr)
+		assert.True(t, auditReport.Valid, "%+v", auditReport.Tools)
+		assert.Zero(t, auditReport.Violations)
+
+		// Dual-root workspace (.backlog + .backlogit) with BACKLOGIT_WORKSPACE_DIR=".backlog"
+		dualRoot, _ := u9Workspace(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(dualRoot, ".backlog"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(dualRoot, ".backlogit"), 0o755))
+		u9Write(t, dualRoot, ".bin/backlogit.exe", string(binBytes))
+		u9Write(t, dualRoot, "start.ps1", launcherPS1(".bin"))
+		u9Write(t, dualRoot, "start.sh", launcherSH(".bin"))
+		u9Write(t, dualRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, dualRoot))
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlog")
+		dualHandle, openDualErr := os.OpenRoot(dualRoot)
+		require.NoError(t, openDualErr)
+		t.Cleanup(func() { _ = dualHandle.Close() })
+
+		dualStorage, dualStorageErr := resolveProvisioningStorageDir(dualHandle)
+		require.NoError(t, dualStorageErr)
+		assert.Equal(t, ".backlog", dualStorage)
+
+		require.NoError(t, WriteToolchainManifest(dualRoot, newRelManifest(".bin")))
+		dualAudit, dualAuditErr := AuditRepositoryToolchain(context.Background(), dualRoot)
+		require.NoError(t, dualAuditErr)
+		assert.True(t, dualAudit.Valid, "%+v", dualAudit.Tools)
+		assert.Zero(t, dualAudit.Violations)
+	})
+
+	t.Run("mismatched_workspace_root_or_unoverridden_dual_roots_fail_closed", func(t *testing.T) {
+		singleRoot, otherDir := u9Workspace(t)
+		u9Write(t, singleRoot, ".bin/backlogit.exe", string(binBytes))
+		t.Chdir(otherDir)
+
+		wsHandle, openErr := os.OpenRoot(singleRoot)
+		require.NoError(t, openErr)
+		t.Cleanup(func() { _ = wsHandle.Close() })
+
+		for _, badWSRoot := range []string{"./subdir", "../escape", otherDir, " . "} {
+			m := newRelManifest(".bin")
+			m.WorkspaceRoot = badWSRoot
+			require.ErrorIs(t, validateManifestForProvisioning(wsHandle, singleRoot, m), corerrors.ErrValidation)
+			require.ErrorIs(t, WriteToolchainManifest(singleRoot, m), corerrors.ErrValidation)
+		}
+
+		dualRoot, _ := u9Workspace(t)
+		require.NoError(t, os.MkdirAll(filepath.Join(dualRoot, ".backlog"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(dualRoot, ".backlogit"), 0o755))
+		u9Write(t, dualRoot, ".bin/backlogit.exe", string(binBytes))
+		dualHandle, openDualErr := os.OpenRoot(dualRoot)
+		require.NoError(t, openDualErr)
+		t.Cleanup(func() { _ = dualHandle.Close() })
+
+		for _, envVal := range []string{"", "invalid"} {
+			t.Setenv("BACKLOGIT_WORKSPACE_DIR", envVal)
+			_, storErr := resolveProvisioningStorageDir(dualHandle)
+			require.ErrorIs(t, storErr, corerrors.ErrValidation)
+			require.ErrorIs(t, WriteToolchainManifest(dualRoot, newRelManifest(".bin")), corerrors.ErrValidation)
+		}
+	})
+
+	t.Run("verify_proposed_launcher_scripts_validates_in_memory_bytes_without_disk_reload_and_rejects_mismatched_or_unpinned_launchers", func(t *testing.T) {
+		pkgDir, wdErr := os.Getwd()
+		require.NoError(t, wdErr)
+
+		// AST check: VerifyProposedLauncherScripts is exported and delegates to inspectLauncher without LoadToolchainManifest.
+		launcherAST, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(pkgDir, "launcher.go"), nil, 0)
+		require.NoError(t, parseErr)
+		var verifyProposedFn *ast.FuncDecl
+		for _, decl := range launcherAST.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "VerifyProposedLauncherScripts" {
+				verifyProposedFn = fn
+				break
+			}
+		}
+		require.NotNil(t, verifyProposedFn, "launcher.go must export VerifyProposedLauncherScripts")
+		callsInspect := false
+		callsLoad := false
+		ast.Inspect(verifyProposedFn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := call.Fun.(*ast.Ident); ok {
+				if id.Name == "inspectLauncher" {
+					callsInspect = true
+				}
+				if id.Name == "LoadToolchainManifest" || id.Name == "loadToolchainManifest" {
+					callsLoad = true
+				}
+			}
+			return true
+		})
+		assert.True(t, callsInspect, "VerifyProposedLauncherScripts must delegate to inspectLauncher")
+		assert.False(t, callsLoad, "VerifyProposedLauncherScripts must not reload toolchain.yaml from disk")
+
+		// Runtime check: while on-disk files still point to ./bin/backlogit.exe, inspectLauncher validates proposed .tools/bin bytes in-memory.
+		root, otherDir := u9Workspace(t)
+		u9Write(t, root, "bin/backlogit.exe", string(binBytes))
+		u9Write(t, root, "start.ps1", launcherPS1("bin"))
+		u9Write(t, root, "start.sh", launcherSH("bin"))
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
+		require.NoError(t, WriteToolchainManifest(root, newRelManifest("bin")))
+
+		t.Chdir(otherDir)
+		proposed := newRelManifest(".tools/bin")
+		proposed.WorkspaceRoot = root
+
+		wsHandle, openErr := os.OpenRoot(root)
+		require.NoError(t, openErr)
+		t.Cleanup(func() { _ = wsHandle.Close() })
+
+		// Pre-install proposed launcher bytes targeting .tools/bin (not yet on disk) pass VerifyProposedLauncherScripts and inspectLauncher with zero violations, including when host_prerequisites is empty.
+		proposedFindings, vpErr := VerifyProposedLauncherScripts(root, proposed, []byte(launcherPS1(".tools/bin")), []byte(launcherSH(".tools/bin")))
+		require.NoError(t, vpErr)
+		for _, f := range proposedFindings {
+			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must pass without violation: %+v", f)
+		}
+		emptyPrereq := *proposed
+		emptyPrereq.HostPrerequisites = []HostPrerequisiteEntry{}
+		emptyPrereqFindings, epErr := VerifyProposedLauncherScripts(root, &emptyPrereq, []byte(launcherPS1(".tools/bin")), []byte(launcherSH(".tools/bin")))
+		require.NoError(t, epErr)
+		for _, f := range emptyPrereqFindings {
+			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must allow empty host_prerequisites: %+v", f)
+		}
+		for _, specialDir := range []string{"my tools", "tools[1]", "#tools", "!tools"} {
+			specialManifest := newRelManifest(specialDir)
+			specialManifest.WorkspaceRoot = root
+			specialFindings, spErr := VerifyProposedLauncherScripts(root, specialManifest, []byte(launcherPS1(specialDir)), []byte(launcherSH(specialDir)))
+			require.NoError(t, spErr)
+			for _, f := range specialFindings {
+				assert.NotEqual(t, "violation", f.Status, "quoted %s must pass VerifyProposedLauncherScripts: %+v", specialDir, f)
+			}
+			// Unquoted spaces/brackets in start.sh must still be rejected.
+			unquotedSH := fmt.Sprintf("#!/bin/sh\nworkspace_root=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nworkspace_bin_directory=$workspace_root/%s\nbacklogit_path=\"$workspace_bin_directory/backlogit.exe\"\nif [ ! -f \"$backlogit_path\" ]; then echo \"Missing\" >&2; exit 1; fi\nexport COPILOT_HOME=\"$workspace_root/.copilot\"\nexport ENGRAM_DATA_DIR=\"$workspace_root/.engram\"\n\"$backlogit_path\" --cwd \"$workspace_root\" mcp status\n", specialDir)
+			unquotedFindings, uqErr := VerifyProposedLauncherScripts(root, specialManifest, nil, []byte(unquotedSH))
+			require.NoError(t, uqErr)
+			hasViolation := false
+			for _, f := range unquotedFindings {
+				if f.Status == "violation" {
+					hasViolation = true
+					break
+				}
+			}
+			assert.True(t, hasViolation, "unquoted %s in start.sh must be rejected", specialDir)
+		}
+		for _, item := range []struct {
+			name string
+			body string
+		}{
+			{name: "start.ps1", body: launcherPS1(".tools/bin")},
+			{name: "start.sh", body: launcherSH(".tools/bin")},
+		} {
+			findings := inspectLauncher(wsHandle, root, item.name, item.body, proposed, true)
+			for _, f := range findings {
+				assert.NotEqual(t, "violation", f.Status, "proposed %s must pass without violation: %+v", item.name, f)
+			}
+		}
+
+		// Disk-based VerifyLauncherScripts must still fail closed when the executable is missing on disk.
+		missingBinRoot, _ := u9Workspace(t)
+		u9Write(t, missingBinRoot, ".bin/backlogit.exe", string(binBytes))
+		u9Write(t, missingBinRoot, "start.ps1", launcherPS1(".bin"))
+		u9Write(t, missingBinRoot, "start.sh", launcherSH(".bin"))
+		u9Write(t, missingBinRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, missingBinRoot))
+		require.NoError(t, WriteToolchainManifest(missingBinRoot, newRelManifest(".bin")))
+		require.NoError(t, os.Remove(filepath.Join(missingBinRoot, ".bin", "backlogit.exe")))
+		diskFindings, diskErr := VerifyLauncherScripts(missingBinRoot)
+		require.NoError(t, diskErr)
+		hasDiskViolation := false
+		for _, f := range diskFindings {
+			if f.Status == "violation" {
+				hasDiskViolation = true
+				break
+			}
+		}
+		assert.True(t, hasDiskViolation, "VerifyLauncherScripts must fail closed when backlogit binary is missing on disk")
+
+		// Un-migrated (still pointing to bin), missing guard, missing --cwd, or ambient PATH lookup produce violation findings.
+		badPS1Cases := []string{
+			launcherPS1("bin"),
+			"$workspaceRoot = $PSScriptRoot\n$backlogitPath = Join-Path $workspaceRoot \".tools/bin/backlogit.exe\"\n$env:COPILOT_HOME = Join-Path $workspaceRoot \".copilot\"\n$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot \".engram\"\n& $backlogitPath --cwd $workspaceRoot mcp status\n",
+			"$workspaceRoot = $PSScriptRoot\n$backlogitPath = Join-Path $workspaceRoot \".tools/bin/backlogit.exe\"\nif (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw \"missing\" }\n$env:COPILOT_HOME = Join-Path $workspaceRoot \".copilot\"\n$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot \".engram\"\n& $backlogitPath mcp status\n",
+			launcherPS1(".tools/bin") + "$companion = (Get-Command \"engram\")\n",
+		}
+		for _, badBody := range badPS1Cases {
+			findings := inspectLauncher(wsHandle, root, "start.ps1", badBody, proposed, true)
+			hasViolation := false
+			for _, f := range findings {
+				if f.Status == "violation" {
+					hasViolation = true
+					break
+				}
+			}
+			assert.True(t, hasViolation, "invalid proposed launcher must produce violation finding:\n%s", badBody)
+		}
+	})
+}

@@ -454,6 +454,46 @@ func DefaultRegistry() *RegistryConfig {
 	}
 }
 
+// RenderDefaultBootstrapFiles returns the rendered default workspace bootstrap
+// files and template markdown files in memory without performing any disk writes.
+func RenderDefaultBootstrapFiles() (top map[string][]byte, templates map[string][]byte, err error) {
+	cfgData, err := yaml.Marshal(defaultConfigBase())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal config: %w", err)
+	}
+	regData, err := yaml.Marshal(DefaultRegistry())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal registry: %w", err)
+	}
+	headerDefData, err := yaml.Marshal(defaultHeaderDef())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal header-def: %w", err)
+	}
+	hooksData, err := defaultHooksYAML()
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal hooks.yaml: %w", err)
+	}
+	migData, err := yaml.Marshal(DefaultMigrationConfig())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal migration defaults: %w", err)
+	}
+
+	top = map[string][]byte{
+		"config.yaml":       cfgData,
+		"registry.yaml":     regData,
+		"header-def.yaml":   headerDefData,
+		stash.JSONLFileName: []byte(""),
+		"hooks.yaml":        hooksData,
+		"migration.yaml":    migData,
+	}
+	rawTemplates := defaultTemplates()
+	templates = make(map[string][]byte, len(rawTemplates))
+	for typeName, content := range rawTemplates {
+		templates[typeName+".md"] = []byte(content)
+	}
+	return top, templates, nil
+}
+
 // WriteDefaults serializes DefaultConfig and DefaultRegistry to the workspace directory.
 // Also writes header-def.yaml and default templates. Existing files are not overwritten.
 func WriteDefaults(workspacePath string) error {

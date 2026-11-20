@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -505,6 +507,7 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 		root := t.TempDir()
 		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlogit")
 		u12InitBacklogitWorkspace(t, root)
+		require.NoError(t, os.RemoveAll(filepath.Join(root, ".bin")))
 
 		fakePathDir := t.TempDir()
 		binName := "backlogit"
@@ -625,5 +628,254 @@ func TestU12_NegativePinningGlobalPATHRefusalAndPathTraversalContainment(t *test
 		}
 		_, statErr := os.Stat(escapedPath)
 		assert.ErrorIs(t, statErr, os.ErrNotExist, "MCP tool must never write outside workspace root")
+	})
+}
+
+type u4CountingReader struct {
+	reads int
+	data  string
+	pos   int
+}
+
+func (r *u4CountingReader) Read(p []byte) (int, error) {
+	r.reads++
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+func TestU4_InitAndInstallPromptToolsDirAndDaemonStartup(t *testing.T) {
+	if prev, ok := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); ok {
+		require.NoError(t, os.Unsetenv("BACKLOGIT_WORKSPACE_DIR"))
+		t.Cleanup(func() { _ = os.Setenv("BACKLOGIT_WORKSPACE_DIR", prev) })
+	}
+	binName := "backlogit"
+	if runtime.GOOS == "windows" {
+		binName = "backlogit.exe"
+	}
+
+	repoRoot := testRepoRoot(t)
+	buildDir := t.TempDir()
+	prodBin := filepath.Join(buildDir, binName)
+	const commitStamp = "u4testcommit0123456789abcdef0123456789ab"
+	buildCmd := exec.CommandContext(t.Context(), "go", "build",
+		"-ldflags", "-X github.com/softwaresalt/backlogit/internal/version.Commit="+commitStamp,
+		"-o", prodBin, "./cmd/backlogit")
+	buildCmd.Dir = repoRoot
+	buildOut, buildErr := buildCmd.CombinedOutput()
+	require.NoError(t, buildErr, "build production binary failed: %s", buildOut)
+
+	prodBytes, err := os.ReadFile(prodBin)
+	require.NoError(t, err)
+	prodSum := sha256.Sum256(prodBytes)
+	prodSumHex := hex.EncodeToString(prodSum[:])
+
+	createDirLink := func(t *testing.T, linkPath, targetPath string) {
+		t.Helper()
+		if runtime.GOOS == "windows" {
+			out, linkErr := exec.Command("cmd", "/c", "mklink", "/J", linkPath, targetPath).CombinedOutput()
+			require.NoError(t, linkErr, "mklink /J failed: %s", out)
+			return
+		}
+		require.NoError(t, os.Symlink(targetPath, linkPath))
+	}
+
+	t.Run("interactive_and_piped_subprocess_prompt_options_with_handle_relative_root_creation", func(t *testing.T) {
+		// Option "\n" defaults to .bin, and defaults to bin when bin/ exists.
+		wsDefault := t.TempDir()
+		cmd1 := cli.NewRootCommand()
+		var out1 bytes.Buffer
+		cmd1.SetOut(&out1)
+		cmd1.SetErr(&out1)
+		cmd1.SetIn(strings.NewReader("\n"))
+		cmd1.SetArgs([]string{"init", "--cwd", wsDefault})
+		require.NoError(t, cmd1.ExecuteContext(t.Context()))
+		assert.Contains(t, out1.String(), "Target tool install directory")
+		assert.FileExists(t, filepath.Join(wsDefault, ".bin", binName))
+
+		wsExistingBin := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(wsExistingBin, "bin"), 0o755))
+		cmd2 := cli.NewRootCommand()
+		cmd2.SetOut(new(bytes.Buffer))
+		cmd2.SetErr(new(bytes.Buffer))
+		cmd2.SetIn(strings.NewReader("\n"))
+		cmd2.SetArgs([]string{"install", "--cwd", wsExistingBin})
+		require.NoError(t, cmd2.ExecuteContext(t.Context()))
+		assert.FileExists(t, filepath.Join(wsExistingBin, "bin", binName))
+
+		// Option "1\n" -> .bin, Option "2\n" -> bin, Option "3\n.custom/tools\n" -> .custom/tools.
+		for _, tc := range []struct {
+			input     string
+			targetDir string
+		}{
+			{input: "1\n", targetDir: ".bin"},
+			{input: "2\n", targetDir: "bin"},
+			{input: "3\n.custom/tools\n", targetDir: ".custom/tools"},
+		} {
+			ws := t.TempDir()
+			cmd := cli.NewRootCommand()
+			cmd.SetOut(new(bytes.Buffer))
+			cmd.SetErr(new(bytes.Buffer))
+			cmd.SetIn(strings.NewReader(tc.input))
+			cmd.SetArgs([]string{"init", "--cwd", ws})
+			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			assert.FileExists(t, filepath.Join(ws, filepath.FromSlash(tc.targetDir), binName))
+		}
+
+		// Multi-segment nonexistent first-init workspace path + relative --cwd path + direct custom stdin.
+		parentDir := t.TempDir()
+		t.Chdir(parentDir)
+		relTarget := filepath.Join("missing-parent", "new-ws")
+		cmdRel := cli.NewRootCommand()
+		cmdRel.SetOut(new(bytes.Buffer))
+		cmdRel.SetErr(new(bytes.Buffer))
+		cmdRel.SetIn(strings.NewReader("custom-tools/sub\n"))
+		cmdRel.SetArgs([]string{"init", "--cwd", relTarget})
+		require.NoError(t, cmdRel.ExecuteContext(t.Context()))
+		assert.FileExists(t, filepath.Join(parentDir, relTarget, "custom-tools", "sub", binName))
+
+		// Real piped subprocess execution with compiled production binary.
+		subWS := t.TempDir()
+		subCmd := exec.CommandContext(t.Context(), prodBin, "init", "--cwd", subWS)
+		subCmd.Stdin = strings.NewReader(".piped-tools/bin\n")
+		subOut, subErr := subCmd.CombinedOutput()
+		require.NoError(t, subErr, "piped subprocess init failed: %s", subOut)
+		assert.Contains(t, string(subOut), "Target tool install directory")
+		assert.FileExists(t, filepath.Join(subWS, ".piped-tools", "bin", binName))
+	})
+
+	t.Run("tools_dir_flag_jsonrpc_noninteractive_mode_and_end_to_end_production_daemon_startup", func(t *testing.T) {
+		// --jsonrpc must NEVER read stdin or emit prompt text.
+		for _, subcommand := range []string{"init", "install"} {
+			wsRPC := t.TempDir()
+			reader := &u4CountingReader{data: "bad-prompt-input\n"}
+			var rpcOut bytes.Buffer
+			cmd := cli.NewRootCommand()
+			cmd.SetOut(&rpcOut)
+			cmd.SetErr(&rpcOut)
+			cmd.SetIn(reader)
+			cmd.SetArgs([]string{"--jsonrpc", "--cwd", wsRPC, subcommand})
+			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			assert.Zero(t, reader.reads, "--jsonrpc %s must never read stdin", subcommand)
+			assert.NotContains(t, rpcOut.String(), "Target tool install directory")
+			assert.FileExists(t, filepath.Join(wsRPC, ".bin", binName))
+
+			wsRPCFlag := t.TempDir()
+			reader2 := &u4CountingReader{data: "bad-prompt-input\n"}
+			var rpcOut2 bytes.Buffer
+			cmd2 := cli.NewRootCommand()
+			cmd2.SetOut(&rpcOut2)
+			cmd2.SetErr(&rpcOut2)
+			cmd2.SetIn(reader2)
+			cmd2.SetArgs([]string{"--jsonrpc", "--cwd", wsRPCFlag, subcommand, "--tools-dir", ".custom/bin"})
+			require.NoError(t, cmd2.ExecuteContext(t.Context()))
+			assert.Zero(t, reader2.reads)
+			assert.NotContains(t, rpcOut2.String(), "Target tool install directory")
+			assert.FileExists(t, filepath.Join(wsRPCFlag, ".custom", "bin", binName))
+		}
+
+		// Compiled production binary init --tools-dir and install --tools-dir + PrewarmMCPDaemon.
+		// Use a short os.MkdirTemp("", "u4-") path so Unix domain sockets on Linux stay well within the 100-byte sun_path limit.
+		wsInit, mkErr := os.MkdirTemp("", "u4-")
+		require.NoError(t, mkErr)
+		t.Cleanup(func() { _ = os.RemoveAll(wsInit) })
+		initOut, initErr := exec.CommandContext(t.Context(), prodBin, "init", "--cwd", wsInit, "--tools-dir", ".custom/bin").CombinedOutput()
+		require.NoError(t, initErr, "prod init failed: %s", initOut)
+
+		installedInit := filepath.Join(wsInit, ".custom", "bin", binName)
+		require.FileExists(t, installedInit)
+		gotBytes, readErr := os.ReadFile(installedInit)
+		require.NoError(t, readErr)
+		gotSum := sha256.Sum256(gotBytes)
+		assert.Equal(t, prodSumHex, hex.EncodeToString(gotSum[:]))
+
+		verOut, verErr := exec.CommandContext(t.Context(), installedInit, "version", "--no-update-check", "--format", "json").CombinedOutput()
+		require.NoError(t, verErr, "installed version failed: %s", verOut)
+		var verDoc map[string]any
+		require.NoError(t, json.Unmarshal(verOut, &verDoc))
+		assert.Equal(t, commitStamp, verDoc["commit"])
+
+		wsInstall := t.TempDir()
+		installOut, installErr := exec.CommandContext(t.Context(), prodBin, "install", "--cwd", wsInstall, "--tools-dir", ".custom/bin").CombinedOutput()
+		require.NoError(t, installErr, "prod install failed: %s", installOut)
+		installedInstall := filepath.Join(wsInstall, ".custom", "bin", binName)
+		require.FileExists(t, installedInstall)
+		gotInstBytes, readInstErr := os.ReadFile(installedInstall)
+		require.NoError(t, readInstErr)
+		gotInstSum := sha256.Sum256(gotInstBytes)
+		assert.Equal(t, prodSumHex, hex.EncodeToString(gotInstSum[:]))
+
+		daemonCtx, daemonCancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer daemonCancel()
+		status, prewarmErr := cli.PrewarmMCPDaemon(daemonCtx, wsInit, false, time.Minute)
+		require.NoError(t, prewarmErr)
+		require.True(t, status.Running)
+		t.Cleanup(func() {
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer stopCancel()
+			_, _ = cli.StopMCPDaemon(stopCtx, wsInit)
+		})
+
+		stopRes, stopErr := cli.StopMCPDaemon(daemonCtx, wsInit)
+		require.NoError(t, stopErr)
+		assert.True(t, stopRes.Stopped)
+	})
+
+	t.Run("zero_mutation_preflight_refusal_on_ancestor_link_or_invalid_lower_priority_configs_including_overrides", func(t *testing.T) {
+		for _, subcommand := range []string{"init", "install"} {
+			// (a) Redirected ancestor link/existing/new.
+			base := t.TempDir()
+			outside := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(outside, "existing"), 0o755))
+			createDirLink(t, filepath.Join(base, "link"), outside)
+			targetWS := filepath.Join(base, "link", "existing", "new")
+
+			cmdA := cli.NewRootCommand()
+			cmdA.SetOut(new(bytes.Buffer))
+			cmdA.SetErr(new(bytes.Buffer))
+			cmdA.SetArgs([]string{subcommand, "--cwd", targetWS, "--tools-dir", ".bin"})
+			errA := cmdA.ExecuteContext(t.Context())
+			require.ErrorIs(t, errA, corerrors.ErrValidation)
+			assert.NoDirExists(t, filepath.Join(outside, "existing", "new"))
+
+			// (b) Pre-existing redirected <storage>/templates.
+			wsTpl := t.TempDir()
+			outsideTpl := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(wsTpl, ".backlog"), 0o755))
+			createDirLink(t, filepath.Join(wsTpl, ".backlog", "templates"), outsideTpl)
+
+			cmdB := cli.NewRootCommand()
+			cmdB.SetOut(new(bytes.Buffer))
+			cmdB.SetErr(new(bytes.Buffer))
+			cmdB.SetArgs([]string{subcommand, "--cwd", wsTpl, "--tools-dir", ".bin"})
+			errB := cmdB.ExecuteContext(t.Context())
+			require.ErrorIs(t, errB, corerrors.ErrValidation)
+			entries, readErr := os.ReadDir(outsideTpl)
+			require.NoError(t, readErr)
+			assert.Empty(t, entries)
+			assert.NoDirExists(t, filepath.Join(wsTpl, ".bin"))
+
+			// (c) Valid .mcp.json + --tools-dir .bin, but invalid lower-priority toolchain.yaml (unknown field).
+			wsTC := t.TempDir()
+			mcpContent := fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`, binName, wsTC)
+			tcContent := "schema_version: \"1.0\"\ncontainment_level: level-1-workspace-local-pinned\nos_container_sandbox_deferred: true\nworkspace_root: \".\"\ntools: []\nhost_prerequisites: []\nunknown_field: true\n"
+			u12Write(t, wsTC, ".mcp.json", mcpContent)
+			u12Write(t, wsTC, ".backlog/toolchain.yaml", tcContent)
+
+			cmdC := cli.NewRootCommand()
+			cmdC.SetOut(new(bytes.Buffer))
+			cmdC.SetErr(new(bytes.Buffer))
+			cmdC.SetArgs([]string{subcommand, "--cwd", wsTC, "--tools-dir", ".bin"})
+			errC := cmdC.ExecuteContext(t.Context())
+			require.ErrorIs(t, errC, corerrors.ErrValidation)
+			assert.NoDirExists(t, filepath.Join(wsTC, ".bin"))
+			gotMCP, _ := os.ReadFile(filepath.Join(wsTC, ".mcp.json"))
+			assert.Equal(t, mcpContent, string(gotMCP))
+			gotTC, _ := os.ReadFile(filepath.Join(wsTC, ".backlog", "toolchain.yaml"))
+			assert.Equal(t, tcContent, string(gotTC))
+		}
 	})
 }

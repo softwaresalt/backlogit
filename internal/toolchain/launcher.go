@@ -36,6 +36,46 @@ func VerifyLauncherScripts(rootPath string) ([]ToolVerificationFinding, error) {
 	return verifyLaunchers(rootPath, m)
 }
 
+// VerifyProposedLauncherScripts validates proposed start.ps1 and start.sh
+// launcher bytes in-memory against a proposed ToolchainManifest without
+// reloading toolchain.yaml or launcher files from disk.
+func VerifyProposedLauncherScripts(rootPath string, m *ToolchainManifest, startPS1, startSH []byte) ([]ToolVerificationFinding, error) {
+	abs, root, err := workspace(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("verify proposed launcher scripts: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := validateManifestStructure(root, abs, m, false); err != nil {
+		return nil, err
+	}
+	manifestCopy := *m
+	manifestCopy.WorkspaceRoot = abs
+	var findings []ToolVerificationFinding
+	for _, script := range []struct {
+		name  string
+		bytes []byte
+	}{
+		{name: "start.ps1", bytes: startPS1},
+		{name: "start.sh", bytes: startSH},
+	} {
+		if script.bytes == nil {
+			continue
+		}
+		if info, statErr := root.Lstat(script.name); statErr == nil {
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(abs, script.name))
+			if linkErr != nil || link || !info.Mode().IsRegular() || info.Mode()&os.ModeIrregular != 0 {
+				findings = append(findings, launcherFinding(&manifestCopy, script.name, "launcher_file_invalid",
+					script.name+": existing launcher file is redirected or not a regular file."))
+				continue
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect %s: %w", script.name, statErr)
+		}
+		findings = append(findings, inspectLauncher(root, abs, script.name, string(script.bytes), &manifestCopy, true)...)
+	}
+	return findings, nil
+}
+
 // AuditRepositoryToolchain combines inventory, MCP and launcher evidence.
 // Level 1 is static workspace-local pinning, not an OS/container sandbox.
 func AuditRepositoryToolchain(ctx context.Context, rootPath string) (*ToolchainVerificationReport, error) {
@@ -103,7 +143,13 @@ func normalizedManifestWorkspaceRoot(m *ToolchainManifest) string {
 }
 
 func isReservedToolsDirSegment(seg string) bool {
-	return strings.EqualFold(seg, ".git") || strings.EqualFold(seg, ".backlog") || strings.EqualFold(seg, ".backlogit")
+	return strings.EqualFold(seg, ".git") ||
+		strings.EqualFold(seg, ".backlog") ||
+		strings.EqualFold(seg, ".backlogit") ||
+		strings.EqualFold(seg, ".gitignore") ||
+		strings.EqualFold(seg, ".mcp.json") ||
+		strings.EqualFold(seg, "start.ps1") ||
+		strings.EqualFold(seg, "start.sh")
 }
 
 func effectiveManifestToolsDir(m *ToolchainManifest) string {
@@ -249,7 +295,7 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 		if closeErr != nil {
 			return nil, fmt.Errorf("close launcher %s: %w", name, closeErr)
 		}
-		findings = append(findings, inspectLauncher(root, abs, name, string(data), m)...)
+		findings = append(findings, inspectLauncher(root, abs, name, string(data), m, false)...)
 	}
 	return findings, nil
 }
@@ -259,20 +305,21 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 // direct local invocations can establish positive evidence. Unknown control
 // flow, interpolation or command substitution always prevents verification.
 type launcherProfile struct {
-	root      *os.Root
-	abs       string
-	name      string
-	ps        bool
-	vars      map[string]string
-	state     map[string]string
-	guards    map[string]bool
-	manifest  *ToolchainManifest
-	findings  []ToolVerificationFinding
-	backlogit bool
+	root            *os.Root
+	abs             string
+	name            string
+	ps              bool
+	allowPreInstall bool
+	vars            map[string]string
+	state           map[string]string
+	guards          map[string]bool
+	manifest        *ToolchainManifest
+	findings        []ToolVerificationFinding
+	backlogit       bool
 }
 
-func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest) []ToolVerificationFinding {
-	p := launcherProfile{root: root, abs: abs, name: name, ps: name == "start.ps1",
+func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest, allowPreInstall bool) []ToolVerificationFinding {
+	p := launcherProfile{root: root, abs: abs, name: name, ps: name == "start.ps1", allowPreInstall: allowPreInstall,
 		vars: make(map[string]string), state: make(map[string]string), guards: make(map[string]bool), manifest: m}
 	if p.ps {
 		p.vars["psscriptroot"] = abs
@@ -305,6 +352,53 @@ func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest
 			name+": static local invocation, fail-closed guard and workspace state verified; no runtime sandbox asserted.")}
 	}
 	return p.findings
+}
+
+func verifyPreInstallBacklogitTool(root *os.Root, abs string, m *ToolchainManifest, tool ToolEntry) error {
+	if !validBacklogitToolInManifest(abs, m, tool) {
+		return fmt.Errorf("backlogit must use the workspace-local pinned binary in the declared tools_dir: %w", corerrors.ErrValidation)
+	}
+	if !bindingWithin(root, abs, tool.ExecutablePath) {
+		return fmt.Errorf("backlogit executable path outside or redirected from workspace: %w", corerrors.ErrValidation)
+	}
+	if strings.TrimSpace(tool.PinnedVersion) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
+		return fmt.Errorf("missing version, binary digest, or lockfile pin: %w", corerrors.ErrValidation)
+	}
+	if strings.TrimSpace(tool.SHA256) == "" && strings.TrimSpace(tool.LockfilePath) == "" {
+		return fmt.Errorf("missing binary digest or lockfile provenance: %w", corerrors.ErrValidation)
+	}
+	bindings, err := parseBindings(root, abs, tool.WorkspaceBindingArgs)
+	if err != nil {
+		return err
+	}
+	if bindings["--cwd"] == "" {
+		return fmt.Errorf("backlogit requires cwd binding: %w", corerrors.ErrValidation)
+	}
+	if strings.TrimSpace(tool.LockfilePath) != "" {
+		relLock, relErr := relativePath(abs, tool.LockfilePath, false)
+		if relErr != nil {
+			return relErr
+		}
+		file, openErr := openLocal(root, abs, relLock)
+		if openErr != nil {
+			return openErr
+		}
+		data, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			return fmt.Errorf("read lockfile: %w", readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close lockfile: %w", closeErr)
+		}
+		version := strings.TrimSpace(tool.PinnedVersion)
+		if len(strings.TrimSpace(string(data))) == 0 ||
+			!strings.Contains(string(data), strings.TrimSpace(tool.ID)) ||
+			(version != "" && !strings.Contains(string(data), version)) {
+			return fmt.Errorf("invalid lockfile provenance: %w", corerrors.ErrValidation)
+		}
+	}
+	return nil
 }
 
 func (p *launcherProfile) fail(code, message string) {
@@ -391,13 +485,19 @@ func (p launcherProfile) path(expression string) string {
 			return ""
 		}
 	}
+	quoted := false
 	if strings.Contains(expression, `"`) {
 		if !strings.HasPrefix(expression, `"`) || !strings.HasSuffix(expression, `"`) || strings.Count(expression, `"`) != 2 {
 			return ""
 		}
 		expression = expression[1 : len(expression)-1]
+		quoted = true
 	}
-	variable := regexp.MustCompile(`^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\-]+)?$`)
+	variablePattern := `^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\-]+)?$`
+	if quoted {
+		variablePattern = `^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\\[\] #!-]+)?$`
+	}
+	variable := regexp.MustCompile(variablePattern)
 	parts := variable.FindStringSubmatch(expression)
 	if parts == nil {
 		return ""
@@ -516,9 +616,23 @@ func (p *launcherProfile) invoke(line string) {
 		return
 	}
 	if err := verifyLocalTool(p.root, p.abs, *tool); err != nil {
-		p.findings = append(p.findings, toolRemediation(launcherFinding(p.manifest, tool.ID, "launcher_tool_invalid",
-			p.name+": local tool pin could not be verified."), p.manifest))
-		return
+		allowPreInstall := false
+		if p.allowPreInstall && isBacklogitTool(p.abs, *tool) && errors.Is(err, os.ErrNotExist) {
+			if relExec, relErr := relativePath(p.abs, tool.ExecutablePath, true); relErr == nil {
+				if f, openErr := openLocal(p.root, p.abs, relExec); errors.Is(openErr, os.ErrNotExist) {
+					if preErr := verifyPreInstallBacklogitTool(p.root, p.abs, p.manifest, *tool); preErr == nil {
+						allowPreInstall = true
+					}
+				} else if f != nil {
+					_ = f.Close()
+				}
+			}
+		}
+		if !allowPreInstall {
+			p.findings = append(p.findings, toolRemediation(launcherFinding(p.manifest, tool.ID, "launcher_tool_invalid",
+				p.name+": local tool pin could not be verified."), p.manifest))
+			return
+		}
 	}
 	if !p.guards[path] || len(p.state) != 2 {
 		p.fail("launcher_not_fail_closed", "Local invocation needs a preceding terminating file check and scoped COPILOT_HOME and ENGRAM_DATA_DIR.")
@@ -656,20 +770,24 @@ func wrapProvisioningValidation(msg string, err error) error {
 }
 
 func validateManifestForProvisioning(root *os.Root, abs string, manifest *ToolchainManifest) error {
+	return validateManifestStructure(root, abs, manifest, true)
+}
+
+func validateManifestStructure(root *os.Root, abs string, manifest *ToolchainManifest, requireNonEmpty bool) error {
 	if root == nil || manifest == nil {
 		return fmt.Errorf("validate toolchain manifest: %w", corerrors.ErrValidation)
 	}
 	if manifest.SchemaVersion != "1.0" ||
 		manifest.ContainmentLevel != Level1WorkspaceLocalPinned ||
 		!manifest.OSContainerSandboxDeferred ||
-		len(manifest.Tools) == 0 ||
-		len(manifest.HostPrerequisites) == 0 {
+		manifest.Tools == nil ||
+		(requireNonEmpty && (len(manifest.Tools) == 0 || manifest.HostPrerequisites == nil || len(manifest.HostPrerequisites) == 0)) {
 		return fmt.Errorf("invalid manifest required fields: %w", corerrors.ErrValidation)
 	}
 	if strings.TrimSpace(manifest.WorkspaceRoot) == "" {
 		return fmt.Errorf("empty manifest workspace root: %w", corerrors.ErrValidation)
 	}
-	declared, err := filepath.Abs(manifest.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, manifest.WorkspaceRoot)
 	if err != nil || !samePath(abs, declared) {
 		return fmt.Errorf("manifest workspace mismatch: %w", corerrors.ErrValidation)
 	}
@@ -806,6 +924,25 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 }
 
 func resolveProvisioningStorageDir(root *os.Root) (string, error) {
+	if root == nil {
+		return "", fmt.Errorf("missing workspace root handle: %w", corerrors.ErrValidation)
+	}
+	if override, hasOverride := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); hasOverride && override != "" {
+		switch override {
+		case ".backlog", ".backlogit":
+			if _, statErr := root.Lstat(override); errors.Is(statErr, os.ErrNotExist) {
+				if err := root.Mkdir(override, 0o755); err != nil {
+					return "", fmt.Errorf("create %s directory: %w", override, err)
+				}
+			} else if statErr != nil {
+				return "", fmt.Errorf("inspect %s directory: %w", override, statErr)
+			}
+			return override, nil
+		default:
+			return "", fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q: %w", override, corerrors.ErrValidation)
+		}
+	}
+
 	_, backlogErr := root.Lstat(".backlog")
 	if backlogErr != nil && !errors.Is(backlogErr, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect .backlog directory: %w", backlogErr)
@@ -818,34 +955,6 @@ func resolveProvisioningStorageDir(root *os.Root) (string, error) {
 	hasBacklogit := backlogitErr == nil
 	if hasBacklog && hasBacklogit {
 		return "", fmt.Errorf("ambiguous workspace storage: %w", corerrors.ErrValidation)
-	}
-
-	override := strings.TrimSpace(os.Getenv("BACKLOGIT_WORKSPACE_DIR"))
-	if override != "" {
-		switch override {
-		case ".backlog":
-			if hasBacklogit {
-				return "", fmt.Errorf("BACKLOGIT_WORKSPACE_DIR=.backlog conflicts with .backlogit: %w", corerrors.ErrValidation)
-			}
-			if !hasBacklog {
-				if err := root.Mkdir(".backlog", 0o755); err != nil {
-					return "", fmt.Errorf("create .backlog directory: %w", err)
-				}
-			}
-			return ".backlog", nil
-		case ".backlogit":
-			if hasBacklog {
-				return "", fmt.Errorf("BACKLOGIT_WORKSPACE_DIR=.backlogit conflicts with .backlog: %w", corerrors.ErrValidation)
-			}
-			if !hasBacklogit {
-				if err := root.Mkdir(".backlogit", 0o755); err != nil {
-					return "", fmt.Errorf("create .backlogit directory: %w", err)
-				}
-			}
-			return ".backlogit", nil
-		default:
-			return "", fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q: %w", override, corerrors.ErrValidation)
-		}
 	}
 
 	if hasBacklog {

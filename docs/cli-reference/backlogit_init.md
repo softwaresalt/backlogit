@@ -17,7 +17,8 @@ Initialize a new backlogit workspace
 Initialize a backlogit workspace in the target directory.
 
 This creates the .backlog storage root, logs directory, canonical stash JSONL
-file, default YAML configuration files, and default artifact templates.
+file, default YAML configuration files, default artifact templates, installs the
+backlogit binary into the chosen target tool directory, and configures .mcp.json.
 
 ```text
 backlogit init [path] [flags]
@@ -27,13 +28,15 @@ backlogit init [path] [flags]
 
 ```text
   backlogit init
+  backlogit init --tools-dir .bin
   backlogit init D:\Source\MyProject
 ```
 
 ### Options
 
 ```text
-  -h, --help   help for init
+  -h, --help               help for init
+      --tools-dir string   workspace-relative target tool directory for backlogit binary and .mcp.json (default .bin or bin)
 ```
 
 ### Options inherited from parent commands
