@@ -22,6 +22,7 @@ import (
 	"github.com/softwaresalt/backlogit/internal/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestU6_SelfInstallMidFlightParentAndLeafSwapRejected(t *testing.T) {
@@ -669,7 +670,13 @@ host_prerequisites:
 		assert.Equal(t, "./.tools/bin/"+binName, blEntry["command"])
 		assert.Equal(t, []any{"*"}, blEntry["tools"])
 
-		// Manifest must canonicalize tools[0].id to "backlogit", update tools_dir, executable_path, and sha256.
+		// Manifest must preserve portable raw workspace_root ("."), canonicalize tools[0].id to "backlogit", update tools_dir, executable_path, and sha256.
+		rawTCBytes, rawTCErr := os.ReadFile(filepath.Join(root, ".backlogit", "toolchain.yaml"))
+		require.NoError(t, rawTCErr)
+		var rawManifest toolchain.ToolchainManifest
+		require.NoError(t, yaml.Unmarshal(rawTCBytes, &rawManifest))
+		assert.Equal(t, ".", rawManifest.WorkspaceRoot)
+
 		loaded, loadErr := toolchain.LoadToolchainManifest(root)
 		require.NoError(t, loadErr)
 		assert.Equal(t, ".tools/bin", loaded.ToolsDir)

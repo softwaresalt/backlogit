@@ -37,7 +37,8 @@ docline:
 * `d9135b35`: Copilot Round 1 remediation and Linux socket path length fix (`internal/cli`, `internal/toolchain`)
 * `dd41d4ce`: Copilot Round 2 remediation — allow quoted spaces and brackets in `launcherProfile.path`
 * `c37d4e44`: Copilot Round 3 remediation — allow literal `#` and `!` in quoted `launcherProfile.path`
-* `db0015e4` + forward restoration commit: Prior local-only `.gsd/harness-manifest.yaml` `config_hash` experiment superseded per operator authorization (`2026-11-20T18:54:42Z`); `.gsd/config.yaml` and `.gsd/harness-manifest.yaml` restored forward to `main` (`6a5fefa63da298f73c4173669882fe10a510f352`) so PR `#665` carries zero `.gsd/` diff against `main`
+* `db0015e4` + `581806ad`: Prior local-only `.gsd/harness-manifest.yaml` `config_hash` experiment superseded per operator authorization (`2026-11-20T18:54:42Z`); `.gsd/config.yaml` and `.gsd/harness-manifest.yaml` restored forward to `main` (`6a5fefa63da298f73c4173669882fe10a510f352`) so PR `#665` carries zero `.gsd/` diff against `main`
+* Adversarial review `[U2]` remediation: `reconcileWorkspaceToolchainYAML` preserves raw on-disk `workspace_root` (e.g., `"."`) when marshaling `toolchain.yaml` (`internal/cli/self_install.go`, `internal/cli/self_install_test.go`)
 
 ## P-021 C2 Deferred Scope Expansions
 
@@ -46,6 +47,8 @@ docline:
 * `6470AD6F`: Cross-package consolidation of `os.Root`, JSON/YAML scanning, and ancestor reparse policy
 * `63E74B09`: Unified `BACKLOGIT_WORKSPACE_DIR=""` and `.backlog`/`.backlogit` storage defaults across `init`/`install`/`core`
 * `BE9AD4F1`: Reconciling carried-forward `.gsd/config.yaml` with `.gsd/harness-manifest.yaml` (`config_hash` / `gsd tune` / `TestU12_HarnessManifestNamespaceReconciliation`), retained in stash for post-closure `Auto-Tune`
+* `B5A55936`: Multi-tool shared-directory variable splitting in `migrateLauncherBytes` (`internal/cli/self_install.go`)
+* `5A7EACC6`: Explicit non-interactive flag / bounded stdin timeout for open idle pipes in `resolveInitTargetToolsDir` (`internal/cli/root.go`)
 
 ## Gate State
 
@@ -53,4 +56,4 @@ docline:
 * `go vet ./...`, `gofmt -l`, `backlogit_docs_lint`, `make md-lint`: PASS
 * `TestU12_HarnessManifestNamespaceReconciliation`: PASS after restoring `.gsd/config.yaml` and `.gsd/harness-manifest.yaml` to `main`
 * Targeted `-race` suites (`./internal/config`, `./internal/toolchain`, `./cmd/gen-docs`, `./internal/cli` U1-U6/init, `./tests/integration` `TestU4`): PASS
-* Local review readiness (`218-F` scope): re-verified on current HEAD (`P0=0, P1=0`, 5 P-021 C2 follow-ups stashed)
+* Local review readiness (`218-F` scope): `READY_WITH_FOLLOWUPS` (`P0=0, P1=0`, 7 P-021 C2 follow-ups stashed)

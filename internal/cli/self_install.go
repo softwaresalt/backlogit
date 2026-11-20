@@ -658,6 +658,7 @@ func reconcileWorkspaceToolchainYAML(wsRoot *os.Root, absRoot, toolsDirRel, binN
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return mcpDaemonValidationError("additional YAML document in toolchain.yaml")
 	}
+	rawWorkspaceRoot := manifest.WorkspaceRoot
 
 	loaded, loadErr := toolchain.LoadToolchainManifest(absRoot)
 	if loadErr != nil {
@@ -820,7 +821,11 @@ func reconcileWorkspaceToolchainYAML(wsRoot *os.Root, absRoot, toolsDirRel, binN
 		return mcpDaemonValidationError("proposed toolchain manifest contains %d violation(s)", fullReport.Violations)
 	}
 
-	encodedManifest, marshalErr := yaml.Marshal(&proposedManifest)
+	diskManifest := proposedManifest
+	if strings.TrimSpace(rawWorkspaceRoot) != "" {
+		diskManifest.WorkspaceRoot = rawWorkspaceRoot
+	}
+	encodedManifest, marshalErr := yaml.Marshal(&diskManifest)
 	if marshalErr != nil {
 		return fmt.Errorf("marshal reconciled toolchain.yaml: %w", marshalErr)
 	}
