@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -16,6 +18,7 @@ import (
 	"testing"
 
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/toolchain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -461,5 +464,381 @@ tools:
 		writeFile(t, badBinRoot, "bin", "not-a-directory")
 		_, _, err4 := resolveConfiguredDaemonBinaryRel(openRoot(t, badBinRoot), badBinRoot)
 		require.ErrorIs(t, err4, corerrors.ErrValidation)
+	})
+}
+
+func TestU2_ConfigureWorkspaceMCPJSONAndReconcileToolchainAfterInstall(t *testing.T) {
+	binName := "backlogit"
+	if runtime.GOOS == "windows" {
+		binName = "backlogit.exe"
+	}
+
+	selfExe, err := os.Executable()
+	require.NoError(t, err)
+	selfBytes, err := os.ReadFile(selfExe)
+	require.NoError(t, err)
+	selfSum := sha256.Sum256(selfBytes)
+	selfSumHex := hex.EncodeToString(selfSum[:])
+
+	writeFile := func(t *testing.T, root, rel, body string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
+	}
+
+	launcherPS1 := func(execDir string) string {
+		return fmt.Sprintf(`$workspaceRoot = $PSScriptRoot
+$workspaceBinDirectory = Join-Path $workspaceRoot %q
+$backlogitPath = Join-Path $workspaceBinDirectory %q
+if (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw "Missing ./%s/%s" }
+$env:COPILOT_HOME = Join-Path $workspaceRoot ".copilot"
+$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot ".engram"
+& $backlogitPath --cwd $workspaceRoot mcp status
+`, execDir, binName, execDir, binName)
+	}
+
+	launcherSH := func(execDir string) string {
+		return fmt.Sprintf(`#!/bin/sh
+workspace_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+workspace_bin_directory="$workspace_root/%s"
+backlogit_path="$workspace_bin_directory/%s"
+if [ ! -f "$backlogit_path" ]; then echo "Missing ./%s/%s" >&2; exit 1; fi
+export COPILOT_HOME="$workspace_root/.copilot"
+export ENGRAM_DATA_DIR="$workspace_root/.engram"
+"$backlogit_path" --cwd "$workspace_root" mcp status
+`, execDir, binName, execDir, binName)
+	}
+
+	t.Run("provisions_mcp_json_after_binary_install_including_samefile_invocation", func(t *testing.T) {
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+		root := t.TempDir()
+		cfgBody := "version: 1\n"
+		writeFile(t, root, ".backlog/config.yaml", cfgBody)
+		writeFile(t, root, ".mcp.json", `{"otherTopLevel":{"keep":true},"mcpServers":{"sibling":{"type":"stdio","command":"./.bin/sibling"}}}`)
+
+		installed, installErr := installWorkspaceRuntimeExecutable(root, ".tools/bin")
+		require.NoError(t, installErr)
+		assert.Equal(t, binName, installed)
+
+		targetBin := filepath.Join(root, ".tools", "bin", binName)
+		require.FileExists(t, targetBin)
+
+		// Verify SameFile invocation still provisions/updates .mcp.json.
+		require.NoError(t, os.Remove(filepath.Join(root, ".mcp.json")))
+		origExeFn := selfInstallExecutablePathFn
+		t.Cleanup(func() { selfInstallExecutablePathFn = origExeFn })
+		selfInstallExecutablePathFn = func() (string, error) {
+			return targetBin, nil
+		}
+
+		writeFile(t, root, ".mcp.json", `{"otherTopLevel":{"keep":true},"mcpServers":{"sibling":{"type":"stdio","command":"./.bin/sibling"}}}`)
+		installed2, sameErr := installWorkspaceRuntimeExecutable(root, ".tools/bin")
+		require.NoError(t, sameErr)
+		assert.Equal(t, binName, installed2)
+
+		mcpBytes, readErr := os.ReadFile(filepath.Join(root, ".mcp.json"))
+		require.NoError(t, readErr)
+		var parsed map[string]any
+		require.NoError(t, json.Unmarshal(mcpBytes, &parsed))
+		assert.Contains(t, parsed, "otherTopLevel")
+		servers, ok := parsed["mcpServers"].(map[string]any)
+		require.True(t, ok, "mcpServers must be a JSON object")
+		assert.Contains(t, servers, "sibling")
+		bl, ok := servers["backlogit"].(map[string]any)
+		require.True(t, ok, "mcpServers.backlogit must be a JSON object")
+		assert.Equal(t, "stdio", bl["type"])
+		assert.Equal(t, "./.tools/bin/"+binName, bl["command"])
+		assert.Equal(t, []any{"mcp", "--cwd", root}, bl["args"])
+
+		cfgAfter, cfgErr := os.ReadFile(filepath.Join(root, ".backlog", "config.yaml"))
+		require.NoError(t, cfgErr)
+		assert.Equal(t, cfgBody, string(cfgAfter))
+	})
+
+	t.Run("canonicalizes_mcp_and_manifest_alias_ids_migrates_launchers_from_bin_and_passes_full_audit_including_external_installer_dual_root_and_different_cwd", func(t *testing.T) {
+		externalDir := t.TempDir()
+		externalBin := filepath.Join(externalDir, binName)
+		require.NoError(t, os.WriteFile(externalBin, selfBytes, 0o755))
+
+		origExeFn := selfInstallExecutablePathFn
+		t.Cleanup(func() { selfInstallExecutablePathFn = origExeFn })
+		selfInstallExecutablePathFn = func() (string, error) {
+			return externalBin, nil
+		}
+
+		// Case 1: Single-root workspace with BACKLOGIT_WORKSPACE_DIR="", external installer,
+		// relative workspace_root: ".", aliased MCP + manifest ID, and different cwd.
+		root := t.TempDir()
+		otherDir := t.TempDir()
+		oldBytes := []byte("old-binary-bytes")
+		oldSum := sha256.Sum256(oldBytes)
+		oldSumHex := hex.EncodeToString(oldSum[:])
+
+		writeFile(t, root, "bin/"+binName, string(oldBytes))
+		writeFile(t, root, "start.ps1", launcherPS1("bin"))
+		writeFile(t, root, "start.sh", launcherSH("bin"))
+		writeFile(t, root, ".mcp.json", fmt.Sprintf(`{"servers":{"backlog-alias":{"type":"stdio","command":"./bin/%s","args":["mcp","--cwd",%q],"tools":["*"]}}}`, binName, root))
+		writeFile(t, root, ".backlogit/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlog-alias
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, oldSumHex))
+
+		t.Chdir(otherDir)
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+		_, err := installWorkspaceRuntimeExecutable(root, ".tools/bin")
+		require.NoError(t, err)
+
+		// Repeat install must remain clean and idempotent.
+		_, err = installWorkspaceRuntimeExecutable(root, ".tools/bin")
+		require.NoError(t, err)
+
+		// .mcp.json must canonicalize to mcpServers.backlogit and remove empty servers.
+		mcpData, err := os.ReadFile(filepath.Join(root, ".mcp.json"))
+		require.NoError(t, err)
+		var mcpDoc map[string]any
+		require.NoError(t, json.Unmarshal(mcpData, &mcpDoc))
+		assert.NotContains(t, mcpDoc, "servers")
+		mcpServers, ok := mcpDoc["mcpServers"].(map[string]any)
+		require.True(t, ok, "mcpServers must be a JSON object")
+		assert.NotContains(t, mcpServers, "backlog-alias")
+		blEntry, ok := mcpServers["backlogit"].(map[string]any)
+		require.True(t, ok, "mcpServers.backlogit must be a JSON object")
+		assert.Equal(t, "./.tools/bin/"+binName, blEntry["command"])
+		assert.Equal(t, []any{"*"}, blEntry["tools"])
+
+		// Manifest must canonicalize tools[0].id to "backlogit", update tools_dir, executable_path, and sha256.
+		loaded, loadErr := toolchain.LoadToolchainManifest(root)
+		require.NoError(t, loadErr)
+		assert.Equal(t, ".tools/bin", loaded.ToolsDir)
+		assert.Equal(t, "backlogit", loaded.Tools[0].ID)
+		assert.Equal(t, "./.tools/bin/"+binName, loaded.Tools[0].ExecutablePath)
+		assert.Equal(t, selfSumHex, loaded.Tools[0].SHA256)
+
+		findings, mcpErr := toolchain.ValidateMCPConfigPinning(root, ".mcp.json", loaded)
+		require.NoError(t, mcpErr)
+		for _, f := range findings {
+			assert.NotEqual(t, "violation", f.Status, "%+v", f)
+		}
+		launcherFindings, lErr := toolchain.VerifyLauncherScripts(root)
+		require.NoError(t, lErr)
+		for _, f := range launcherFindings {
+			assert.NotEqual(t, "violation", f.Status, "%+v", f)
+		}
+		auditReport, auditErr := toolchain.AuditRepositoryToolchain(context.Background(), root)
+		require.NoError(t, auditErr)
+		assert.True(t, auditReport.Valid, "%+v", auditReport.Tools)
+		assert.Zero(t, auditReport.Violations)
+
+		// Case 2: Dual-root workspace (.backlog + .backlogit) honoring BACKLOGIT_WORKSPACE_DIR=.backlog.
+		dualRoot := t.TempDir()
+		writeFile(t, dualRoot, "bin/"+binName, string(oldBytes))
+		writeFile(t, dualRoot, "start.ps1", launcherPS1("bin"))
+		writeFile(t, dualRoot, "start.sh", launcherSH("bin"))
+		writeFile(t, dualRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlog-alias":{"type":"stdio","command":"./bin/%s","args":["mcp","--cwd",%q]}}}`, binName, dualRoot))
+		writeFile(t, dualRoot, ".backlog/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlog-alias
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, oldSumHex))
+		require.NoError(t, os.MkdirAll(filepath.Join(dualRoot, ".backlogit"), 0o755))
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlog")
+		_, dualErr := installWorkspaceRuntimeExecutable(dualRoot, ".tools/bin")
+		require.NoError(t, dualErr)
+
+		dualAudit, dualAuditErr := toolchain.AuditRepositoryToolchain(context.Background(), dualRoot)
+		require.NoError(t, dualAuditErr)
+		assert.True(t, dualAudit.Valid, "%+v", dualAudit.Tools)
+		assert.Zero(t, dualAudit.Violations)
+	})
+
+	t.Run("preflight_rejects_unrelated_tool_digest_mismatch_incompatible_lockfile_alias_ref_unmigrated_launcher_or_unknown_fields_with_unchanged_bytes_and_zero_new_files", func(t *testing.T) {
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+		// 1. Unrelated tool SHA-256 mismatch fails closed with zero new dirs/files and unchanged bytes.
+		mismatchRoot := t.TempDir()
+		origMCP := fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/%s","args":["mcp","--cwd",%q]}}}`, binName, mismatchRoot)
+		writeFile(t, mismatchRoot, "bin/"+binName, "old-bin")
+		writeFile(t, mismatchRoot, "bin/engram.exe", "actual-engram")
+		writeFile(t, mismatchRoot, ".mcp.json", origMCP)
+		oldBinSum := sha256.Sum256([]byte("old-bin"))
+		origToolchain := fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+  - id: engram
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/engram.exe"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args: []
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, hex.EncodeToString(oldBinSum[:]), strings.Repeat("0", 64))
+		writeFile(t, mismatchRoot, ".backlog/toolchain.yaml", origToolchain)
+
+		_, mismatchErr := installWorkspaceRuntimeExecutable(mismatchRoot, ".tools/bin")
+		require.ErrorIs(t, mismatchErr, corerrors.ErrValidation)
+		assert.NoDirExists(t, filepath.Join(mismatchRoot, ".tools"))
+		gotMCP, _ := os.ReadFile(filepath.Join(mismatchRoot, ".mcp.json"))
+		assert.Equal(t, origMCP, string(gotMCP))
+		gotTC, _ := os.ReadFile(filepath.Join(mismatchRoot, ".backlog", "toolchain.yaml"))
+		assert.Equal(t, origToolchain, string(gotTC))
+
+		// 2. Aliased tool whose LockfilePath only mentions "backlog-alias" (not canonical "backlogit") fails closed.
+		lockRoot := t.TempDir()
+		writeFile(t, lockRoot, "bin/"+binName, "old-bin")
+		writeFile(t, lockRoot, "tools.lock", "backlog-alias 1.0.0\n")
+		writeFile(t, lockRoot, ".backlog/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlog-alias
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    lockfile_path: "tools.lock"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, hex.EncodeToString(oldBinSum[:])))
+		_, lockErr := installWorkspaceRuntimeExecutable(lockRoot, ".tools/bin")
+		require.ErrorIs(t, lockErr, corerrors.ErrValidation)
+		assert.NoDirExists(t, filepath.Join(lockRoot, ".tools"))
+
+		// 3. Un-reconcilable start.ps1 launcher fails preflight with zero mutations.
+		badLauncherRoot := t.TempDir()
+		badPS1 := "# custom unsupported launcher\nif ($true) { & ./bin/" + binName + " }\n"
+		writeFile(t, badLauncherRoot, "bin/"+binName, "old-bin")
+		writeFile(t, badLauncherRoot, "start.ps1", badPS1)
+		writeFile(t, badLauncherRoot, "start.sh", launcherSH("bin"))
+		writeFile(t, badLauncherRoot, ".backlog/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, hex.EncodeToString(oldBinSum[:])))
+		_, launcherErr := installWorkspaceRuntimeExecutable(badLauncherRoot, ".tools/bin")
+		require.ErrorIs(t, launcherErr, corerrors.ErrValidation)
+		assert.NoDirExists(t, filepath.Join(badLauncherRoot, ".tools"))
+		gotPS1, _ := os.ReadFile(filepath.Join(badLauncherRoot, "start.ps1"))
+		assert.Equal(t, badPS1, string(gotPS1))
+
+		// 4. Conflicting non-stdio transport in .mcp.json and unknown YAML field in toolchain.yaml fail closed.
+		nonStdioRoot := t.TempDir()
+		origNonStdio := `{"mcpServers":{"backlogit":{"type":"http","url":"https://evil.invalid/mcp","command":"./bin/backlogit.exe"}}}`
+		writeFile(t, nonStdioRoot, ".mcp.json", origNonStdio)
+		_, nonStdioErr := installWorkspaceRuntimeExecutable(nonStdioRoot, ".tools/bin")
+		require.ErrorIs(t, nonStdioErr, corerrors.ErrValidation)
+		assert.NoDirExists(t, filepath.Join(nonStdioRoot, ".tools"))
+		gotNonStdio, _ := os.ReadFile(filepath.Join(nonStdioRoot, ".mcp.json"))
+		assert.Equal(t, origNonStdio, string(gotNonStdio))
+
+		// 5. Rollback on mid-flight .mcp.json failure via selfInstallBeforeIgnoreReplaceHook.
+		rollbackRoot := t.TempDir()
+		outsideFile := filepath.Join(t.TempDir(), "outside-mcp.json")
+		require.NoError(t, os.WriteFile(outsideFile, []byte("untouched\n"), 0o600))
+		origHook := selfInstallBeforeIgnoreReplaceHook
+		t.Cleanup(func() { selfInstallBeforeIgnoreReplaceHook = origHook })
+		selfInstallBeforeIgnoreReplaceHook = func(fileName string) {
+			if fileName != ".mcp.json" {
+				return
+			}
+			mcpPath := filepath.Join(rollbackRoot, ".mcp.json")
+			if runtime.GOOS == "windows" {
+				out, lErr := exec.Command("cmd", "/c", "mklink", mcpPath, outsideFile).CombinedOutput()
+				if lErr != nil {
+					_ = os.MkdirAll(mcpPath, 0o755)
+				} else {
+					_ = out
+				}
+			} else {
+				_ = os.Symlink(outsideFile, mcpPath)
+			}
+		}
+		_, rbErr := installWorkspaceRuntimeExecutable(rollbackRoot, ".tools/bin")
+		require.ErrorIs(t, rbErr, corerrors.ErrValidation)
+		assert.NoFileExists(t, filepath.Join(rollbackRoot, ".tools", "bin", binName))
+		gotOutside, _ := os.ReadFile(outsideFile)
+		assert.Equal(t, "untouched\n", string(gotOutside))
 	})
 }

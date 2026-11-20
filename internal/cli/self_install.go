@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,9 +16,12 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/softwaresalt/backlogit/internal/atomicfile"
 	"github.com/softwaresalt/backlogit/internal/core"
 	corerrors "github.com/softwaresalt/backlogit/internal/errors"
+	"github.com/softwaresalt/backlogit/internal/toolchain"
 )
 
 var (
@@ -277,9 +285,623 @@ func openValidatedWorkspaceAndStorageRoots(root, storageDir string) (string, *os
 	return absRoot, wsRoot, storageHandle, nil
 }
 
+func writeFileAtomicallyInRoot(targetRoot *os.Root, targetDirAbs, fileName string, data []byte, defaultMode os.FileMode, execTarget bool, beforeReplaceHook func(string)) error {
+	mode := defaultMode
+	targetAbs := filepath.Join(targetDirAbs, fileName)
+	info, statErr := targetRoot.Lstat(fileName)
+	if statErr == nil {
+		link, linkErr := core.IsSymlinkOrReparsePoint(info, targetAbs)
+		if linkErr != nil || link || info.Mode()&os.ModeIrregular != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("%s is redirected or not a regular file: %w", fileName, corerrors.ErrValidation)
+		}
+		mode = info.Mode().Perm() &^ 0o022
+		if mode == 0 {
+			mode = defaultMode
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("inspect %s: %w", fileName, statErr)
+	}
+
+	tmpName := fmt.Sprintf("%s.tmp.%d.%d", fileName, os.Getpid(), selfInstallTempSeq.Add(1))
+	tf, err := targetRoot.OpenFile(tmpName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return fmt.Errorf("create temp %s: %w", fileName, err)
+	}
+	tfClosed := false
+	tmpRemoved := false
+	defer func() {
+		if !tfClosed {
+			_ = tf.Close()
+		}
+		if !tmpRemoved {
+			_ = targetRoot.Remove(tmpName)
+		}
+	}()
+
+	openedStat, err := tf.Stat()
+	if err != nil {
+		return fmt.Errorf("stat temp %s: %w", fileName, err)
+	}
+	lstatStat, err := targetRoot.Lstat(tmpName)
+	if err != nil || !os.SameFile(openedStat, lstatStat) {
+		return fmt.Errorf("temp %s identity changed after open: %w", fileName, corerrors.ErrValidation)
+	}
+	written := 0
+	for written < len(data) {
+		n, wErr := tf.Write(data[written:])
+		if wErr != nil {
+			return fmt.Errorf("write temp %s: %w", fileName, wErr)
+		}
+		if n == 0 {
+			return fmt.Errorf("short write to temp %s: %w", fileName, io.ErrShortWrite)
+		}
+		written += n
+	}
+	if err := tf.Chmod(mode); err != nil {
+		return fmt.Errorf("chmod temp %s: %w", fileName, err)
+	}
+	if err := tf.Sync(); err != nil {
+		return fmt.Errorf("sync temp %s: %w", fileName, err)
+	}
+	tfClosed = true
+	if err := tf.Close(); err != nil {
+		return fmt.Errorf("close temp %s: %w", fileName, err)
+	}
+
+	if beforeReplaceHook != nil {
+		beforeReplaceHook(fileName)
+	}
+
+	preInfo, preErr := targetRoot.Lstat(fileName)
+	if preErr == nil {
+		preLink, linkErr := core.IsSymlinkOrReparsePoint(preInfo, targetAbs)
+		if linkErr != nil || preLink || preInfo.Mode()&os.ModeIrregular != 0 || !preInfo.Mode().IsRegular() {
+			return fmt.Errorf("%s became redirected or non-regular before replace: %w", fileName, corerrors.ErrValidation)
+		}
+	} else if !errors.Is(preErr, os.ErrNotExist) {
+		return fmt.Errorf("re-inspect %s before replace: %w", fileName, preErr)
+	}
+
+	if err := atomicfile.ReplaceTempFileInRoot(targetRoot, targetDirAbs, tmpName, fileName, execTarget); err != nil {
+		return fmt.Errorf("replace %s: %w", fileName, err)
+	}
+	tmpRemoved = true
+	return nil
+}
+
+func parseAndValidateMCPJSONRaw(wsRoot *os.Root, absRoot string) (map[string]json.RawMessage, string, map[string]json.RawMessage, string, map[string]json.RawMessage, string, map[string]json.RawMessage, error) {
+	top := make(map[string]json.RawMessage)
+	existingBytes, err := readLocalFileInRoot(wsRoot, absRoot, ".mcp.json", maxMCPDaemonInfoBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return top, "", nil, "", nil, "", nil, nil
+	}
+	if err != nil {
+		return nil, "", nil, "", nil, "", nil, err
+	}
+	if err := scanDaemonJSON(existingBytes); err != nil {
+		return nil, "", nil, "", nil, "", nil, err
+	}
+	trimmed := bytes.TrimSpace(existingBytes)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError(".mcp.json top-level must be a JSON object")
+	}
+	if err := json.Unmarshal(trimmed, &top); err != nil {
+		return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError("decode .mcp.json: %v", err)
+	}
+
+	var mcpKey, srvKey string
+	var mcpMap, srvMap map[string]json.RawMessage
+	type matchedEntry struct {
+		section string
+		key     string
+		raw     map[string]json.RawMessage
+		parsed  daemonMCPJSONServer
+	}
+	var matched []matchedEntry
+
+	for _, sec := range []string{"mcpServers", "servers"} {
+		var actualKey string
+		var rawSec json.RawMessage
+		for k, v := range top {
+			if foldDaemonKey(k) == foldDaemonKey(sec) {
+				actualKey = k
+				rawSec = v
+				break
+			}
+		}
+		if actualKey == "" {
+			continue
+		}
+		if _, err := decodeDaemonMCPServersMap(rawSec, sec); err != nil {
+			return nil, "", nil, "", nil, "", nil, err
+		}
+		var secEntries map[string]json.RawMessage
+		if err := json.Unmarshal(rawSec, &secEntries); err != nil {
+			return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError("decode .mcp.json %s: %v", sec, err)
+		}
+		if sec == "mcpServers" {
+			mcpKey = actualKey
+			mcpMap = secEntries
+		} else {
+			srvKey = actualKey
+			srvMap = secEntries
+		}
+
+		names := make([]string, 0, len(secEntries))
+		for name := range secEntries {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			var parsed daemonMCPJSONServer
+			if err := json.Unmarshal(secEntries[name], &parsed); err != nil {
+				return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError("decode .mcp.json %s.%s: %v", sec, name, err)
+			}
+			if foldDaemonKey(strings.TrimSpace(name)) == foldDaemonKey("backlogit") || isBacklogitDaemonCommand(parsed.Command) {
+				var rawObj map[string]json.RawMessage
+				if err := json.Unmarshal(secEntries[name], &rawObj); err != nil {
+					return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError("decode .mcp.json %s.%s object: %v", sec, name, err)
+				}
+				matched = append(matched, matchedEntry{section: sec, key: name, raw: rawObj, parsed: parsed})
+			}
+		}
+	}
+
+	if len(matched) > 1 {
+		return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError("ambiguous multiple backlogit entries in .mcp.json")
+	}
+	var matchedSec string
+	var matchedRaw map[string]json.RawMessage
+	if len(matched) == 1 {
+		srvType := strings.TrimSpace(matched[0].parsed.Type)
+		if strings.TrimSpace(matched[0].parsed.URL) != "" || (srvType != "" && !strings.EqualFold(srvType, "stdio")) {
+			return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError(".mcp.json backlogit entry must use stdio transport without url")
+		}
+		matchedSec = matched[0].section
+		matchedRaw = matched[0].raw
+		if matched[0].section == "mcpServers" {
+			delete(mcpMap, matched[0].key)
+		} else {
+			delete(srvMap, matched[0].key)
+		}
+	}
+	if srvKey != "" && len(srvMap) > 0 {
+		return nil, "", nil, "", nil, "", nil, mcpDaemonValidationError(".mcp.json servers block contains non-backlogit entries")
+	}
+	return top, mcpKey, mcpMap, srvKey, srvMap, matchedSec, matchedRaw, nil
+}
+
+func configureWorkspaceMCPJSON(wsRoot *os.Root, absRoot, toolsDirRel, binName string) error {
+	cleanToolsDir, err := validateTargetToolsDirInput(toolsDirRel)
+	if err != nil {
+		return err
+	}
+	installedFile, _, err := openLocalFileInRoot(wsRoot, absRoot, filepath.Join(cleanToolsDir, binName))
+	if err != nil {
+		return fmt.Errorf("verify installed tool executable before configuring .mcp.json: %w", err)
+	}
+	if closeErr := installedFile.Close(); closeErr != nil {
+		return fmt.Errorf("close verified tool executable: %w", closeErr)
+	}
+
+	top, mcpKey, mcpMap, srvKey, _, _, matchedRaw, err := parseAndValidateMCPJSONRaw(wsRoot, absRoot)
+	if err != nil {
+		return err
+	}
+	if mcpKey != "" && mcpKey != "mcpServers" {
+		delete(top, mcpKey)
+	}
+	if srvKey != "" {
+		delete(top, srvKey)
+	}
+	if mcpMap == nil {
+		mcpMap = make(map[string]json.RawMessage)
+	}
+
+	entryObj := make(map[string]json.RawMessage)
+	for k, v := range matchedRaw {
+		entryObj[k] = v
+	}
+	typeJSON, _ := json.Marshal("stdio")
+	cmdJSON, _ := json.Marshal("./" + filepath.ToSlash(filepath.Join(cleanToolsDir, binName)))
+	argsJSON, _ := json.Marshal([]string{"mcp", "--cwd", absRoot})
+	entryObj["type"] = typeJSON
+	entryObj["command"] = cmdJSON
+	entryObj["args"] = argsJSON
+
+	entryBytes, err := json.Marshal(entryObj)
+	if err != nil {
+		return fmt.Errorf("marshal .mcp.json backlogit entry: %w", err)
+	}
+	mcpMap["backlogit"] = json.RawMessage(entryBytes)
+
+	mcpMapBytes, err := json.Marshal(mcpMap)
+	if err != nil {
+		return fmt.Errorf("marshal .mcp.json mcpServers: %w", err)
+	}
+	top["mcpServers"] = json.RawMessage(mcpMapBytes)
+
+	formatted, err := json.MarshalIndent(top, "", "  ")
+	if err != nil {
+		return fmt.Errorf("format .mcp.json: %w", err)
+	}
+	formatted = append(formatted, '\n')
+
+	return writeFileAtomicallyInRoot(wsRoot, absRoot, ".mcp.json", formatted, 0o644, false, selfInstallBeforeIgnoreReplaceHook)
+}
+
+func migrateLauncherBytes(data []byte, oldToolsDir, newToolsDir, binName string) ([]byte, bool) {
+	oldSlash := filepath.ToSlash(filepath.Clean(oldToolsDir))
+	newSlash := filepath.ToSlash(filepath.Clean(newToolsDir))
+	if oldSlash == newSlash {
+		return data, false
+	}
+	oldWin := filepath.FromSlash(oldSlash)
+	newWin := filepath.FromSlash(newSlash)
+
+	text := string(data)
+	shebang := ""
+	rest := text
+	if strings.HasPrefix(text, "#!") {
+		if idx := strings.IndexByte(text, '\n'); idx >= 0 {
+			shebang = text[:idx+1]
+			rest = text[idx+1:]
+		} else {
+			return data, false
+		}
+	}
+
+	pairs := []string{
+		"./" + oldSlash + "/" + binName, "./" + newSlash + "/" + binName,
+		"./" + oldSlash + "/backlogit.exe", "./" + newSlash + "/" + binName,
+		"./" + oldSlash + "/backlogit", "./" + newSlash + "/" + binName,
+		`.\` + oldWin + `\` + binName, `.\` + newWin + `\` + binName,
+		`.\` + oldWin + `\backlogit.exe`, `.\` + newWin + `\` + binName,
+		`.\` + oldWin + `\backlogit`, `.\` + newWin + `\` + binName,
+		`"$workspace_root/` + oldSlash + `/`, `"$workspace_root/` + newSlash + `/`,
+		`"$workspace_root/` + oldSlash + `"`, `"$workspace_root/` + newSlash + `"`,
+		`"${workspace_root}/` + oldSlash + `/`, `"${workspace_root}/` + newSlash + `/`,
+		`"${workspace_root}/` + oldSlash + `"`, `"${workspace_root}/` + newSlash + `"`,
+		`"` + oldSlash + `"`, `"` + newSlash + `"`,
+		`'` + oldSlash + `'`, `'` + newSlash + `'`,
+	}
+	if oldWin != oldSlash {
+		pairs = append(pairs,
+			`"`+oldWin+`"`, `"`+newWin+`"`,
+			`'`+oldWin+`'`, `'`+newWin+`'`,
+		)
+	}
+	replacer := strings.NewReplacer(pairs...)
+	updated := shebang + replacer.Replace(rest)
+	return []byte(updated), updated != text
+}
+
+func sha256FileInRoot(wsRoot *os.Root, absRoot, rel string) (string, error) {
+	f, _, err := openLocalFileInRoot(wsRoot, absRoot, rel)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	_, copyErr := io.Copy(h, f)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return "", fmt.Errorf("hash %s: %w", rel, copyErr)
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("close %s: %w", rel, closeErr)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func reconcileWorkspaceToolchainYAML(wsRoot *os.Root, absRoot, toolsDirRel, binName, installedSHA256Hex string) error {
+	cleanToolsDir, err := validateTargetToolsDirInput(toolsDirRel)
+	if err != nil {
+		return err
+	}
+	storageDir, hasStorage, err := resolveDaemonStorageDirName(wsRoot, absRoot)
+	if err != nil || !hasStorage {
+		return err
+	}
+
+	storageInfo, err := wsRoot.Lstat(storageDir)
+	if err != nil {
+		return fmt.Errorf("inspect storage directory %s: %w", storageDir, err)
+	}
+	storageAbs := filepath.Join(absRoot, storageDir)
+	storageLink, linkErr := core.IsSymlinkOrReparsePoint(storageInfo, storageAbs)
+	if linkErr != nil || storageLink || storageInfo.Mode()&os.ModeIrregular != 0 || !storageInfo.IsDir() {
+		return fmt.Errorf("storage directory %s is redirected or not a directory: %w", storageDir, corerrors.ErrValidation)
+	}
+	storageHandle, err := wsRoot.OpenRoot(storageDir)
+	if err != nil {
+		return fmt.Errorf("open storage directory %s: %w", storageDir, err)
+	}
+	defer func() { _ = storageHandle.Close() }()
+	openedStorage, statErr := storageHandle.Stat(".")
+	if statErr != nil || !os.SameFile(storageInfo, openedStorage) {
+		return fmt.Errorf("storage directory %s identity changed after open: %w", storageDir, corerrors.ErrValidation)
+	}
+
+	tcRel := filepath.Join(storageDir, "toolchain.yaml")
+	data, readErr := readLocalFileInRoot(wsRoot, absRoot, tcRel, maxMCPDaemonInfoBytes)
+	if errors.Is(readErr, os.ErrNotExist) {
+		return nil
+	}
+	if readErr != nil {
+		return readErr
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return mcpDaemonValidationError("parse toolchain.yaml: %v", err)
+	}
+	if err := validateDaemonYAMLKeys(&doc); err != nil {
+		return err
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	var manifest toolchain.ToolchainManifest
+	if err := decoder.Decode(&manifest); err != nil {
+		return mcpDaemonValidationError("decode toolchain.yaml: %v", err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return mcpDaemonValidationError("additional YAML document in toolchain.yaml")
+	}
+
+	loaded, loadErr := toolchain.LoadToolchainManifest(absRoot)
+	if loadErr != nil {
+		return loadErr
+	}
+	manifest = *loaded
+
+	var matchedIdxs []int
+	for i, tool := range manifest.Tools {
+		if strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") || isBacklogitDaemonCommand(tool.ExecutablePath) {
+			matchedIdxs = append(matchedIdxs, i)
+		}
+	}
+	if len(matchedIdxs) != 1 {
+		return mcpDaemonValidationError("toolchain.yaml must declare exactly 1 backlogit entry, found %d", len(matchedIdxs))
+	}
+	idx := matchedIdxs[0]
+	bt := manifest.Tools[idx]
+	if bt.ContainmentClass != toolchain.WorkspaceLocalPinned ||
+		!strings.EqualFold(strings.TrimSpace(bt.Kind), "mcp") ||
+		strings.TrimSpace(bt.EntrypointPath) != "" {
+		return mcpDaemonValidationError("toolchain.yaml backlogit entry must be workspace-local-pinned kind mcp without entrypoint_path")
+	}
+
+	for i, tool := range manifest.Tools {
+		if i != idx && strings.EqualFold(strings.TrimSpace(tool.ID), "backlogit") {
+			return mcpDaemonValidationError("duplicate backlogit tool identity in toolchain.yaml")
+		}
+	}
+	for _, prereq := range manifest.HostPrerequisites {
+		if strings.EqualFold(strings.TrimSpace(prereq.ID), "backlogit") {
+			return mcpDaemonValidationError("duplicate backlogit identity in host_prerequisites")
+		}
+	}
+
+	oldToolsDir := manifest.ToolsDir
+	if strings.TrimSpace(oldToolsDir) == "" {
+		oldRel, relErr := validateBacklogitCommandRel(absRoot, bt.ExecutablePath)
+		if relErr != nil {
+			return relErr
+		}
+		oldToolsDir = filepath.ToSlash(filepath.Dir(oldRel))
+	}
+
+	if strings.TrimSpace(bt.LockfilePath) != "" {
+		lockData, lockErr := readLocalFileInRoot(wsRoot, absRoot, bt.LockfilePath, maxMCPDaemonInfoBytes)
+		if lockErr != nil {
+			return mcpDaemonValidationError("read backlogit lockfile_path %q: %v", bt.LockfilePath, lockErr)
+		}
+		versionPin := strings.TrimSpace(bt.PinnedVersion)
+		if len(bytes.TrimSpace(lockData)) == 0 ||
+			!strings.Contains(string(lockData), "backlogit") ||
+			(versionPin != "" && !strings.Contains(string(lockData), versionPin)) {
+			return mcpDaemonValidationError("toolchain.yaml backlogit lockfile_path %q lacks canonical backlogit provenance", bt.LockfilePath)
+		}
+	}
+
+	newToolsSlash := filepath.ToSlash(cleanToolsDir)
+	proposedManifest := manifest
+	proposedManifest.Tools = append([]toolchain.ToolEntry(nil), manifest.Tools...)
+	proposedManifest.HostPrerequisites = append([]toolchain.HostPrerequisiteEntry(nil), manifest.HostPrerequisites...)
+	proposedManifest.WorkspaceRoot = absRoot
+	if manifest.ToolsDir != "" {
+		proposedManifest.ToolsDir = newToolsSlash
+	}
+	proposedManifest.Tools[idx].ID = "backlogit"
+	proposedManifest.Tools[idx].ExecutablePath = "./" + newToolsSlash + "/" + binName
+
+	if installedSHA256Hex != "" {
+		proposedManifest.Tools[idx].SHA256 = installedSHA256Hex
+	} else {
+		// In preflight mode, if the target binary already exists on disk (e.g.
+		// upgrading in place), align the preflight copy with the on-disk bytes
+		// so VerifyProposedLauncherScripts validates against current disk state.
+		if existingSum, sumErr := sha256FileInRoot(wsRoot, absRoot, filepath.Join(cleanToolsDir, binName)); sumErr == nil {
+			proposedManifest.Tools[idx].SHA256 = existingSum
+		}
+	}
+
+	unchangedTools := make([]toolchain.ToolEntry, 0, len(proposedManifest.Tools)-1)
+	for i, tool := range proposedManifest.Tools {
+		if i != idx {
+			unchangedTools = append(unchangedTools, tool)
+		}
+	}
+	unchangedManifest := proposedManifest
+	unchangedManifest.Tools = unchangedTools
+	unchangedReport, unchangedErr := toolchain.VerifyWorkspaceToolchain(context.Background(), absRoot, &unchangedManifest)
+	if unchangedErr != nil {
+		return unchangedErr
+	}
+	if unchangedReport == nil || !unchangedReport.Valid || unchangedReport.Violations > 0 {
+		return mcpDaemonValidationError("unchanged toolchain inventory contains %d violation(s)", unchangedReport.Violations)
+	}
+
+	var proposedPS1, proposedSH []byte
+	var ps1Migrated, shMigrated bool
+	if ps1Bytes, ps1Err := readLocalFileInRoot(wsRoot, absRoot, "start.ps1", maxMCPDaemonInfoBytes); ps1Err == nil {
+		proposedPS1, ps1Migrated = migrateLauncherBytes(ps1Bytes, oldToolsDir, newToolsSlash, binName)
+	} else if !errors.Is(ps1Err, os.ErrNotExist) {
+		return ps1Err
+	}
+	if shBytes, shErr := readLocalFileInRoot(wsRoot, absRoot, "start.sh", maxMCPDaemonInfoBytes); shErr == nil {
+		proposedSH, shMigrated = migrateLauncherBytes(shBytes, oldToolsDir, newToolsSlash, binName)
+	} else if !errors.Is(shErr, os.ErrNotExist) {
+		return shErr
+	}
+
+	if proposedPS1 != nil || proposedSH != nil {
+		launcherFindings, lErr := toolchain.VerifyProposedLauncherScripts(absRoot, &proposedManifest, proposedPS1, proposedSH)
+		if lErr != nil {
+			return lErr
+		}
+		for _, f := range launcherFindings {
+			if f.Status == "violation" {
+				return mcpDaemonValidationError("launcher script %s (%s) verification failed: %s", f.ToolID, f.Code, f.Message)
+			}
+		}
+	}
+
+	if installedSHA256Hex == "" {
+		return nil
+	}
+
+	fullReport, fullErr := toolchain.VerifyWorkspaceToolchain(context.Background(), absRoot, &proposedManifest)
+	if fullErr != nil {
+		return fullErr
+	}
+	if fullReport == nil || !fullReport.Valid || fullReport.Violations > 0 {
+		return mcpDaemonValidationError("proposed toolchain manifest contains %d violation(s)", fullReport.Violations)
+	}
+
+	encodedManifest, marshalErr := yaml.Marshal(&proposedManifest)
+	if marshalErr != nil {
+		return fmt.Errorf("marshal reconciled toolchain.yaml: %w", marshalErr)
+	}
+	if err := writeFileAtomicallyInRoot(storageHandle, storageAbs, "toolchain.yaml", encodedManifest, 0o600, true, nil); err != nil {
+		return err
+	}
+	if ps1Migrated {
+		if err := writeFileAtomicallyInRoot(wsRoot, absRoot, "start.ps1", proposedPS1, 0o644, false, nil); err != nil {
+			return err
+		}
+	}
+	if shMigrated {
+		if err := writeFileAtomicallyInRoot(wsRoot, absRoot, "start.sh", proposedSH, 0o755, false, nil); err != nil {
+			return err
+		}
+	}
+
+	if proposedPS1 != nil && proposedSH != nil {
+		diskFindings, diskErr := toolchain.VerifyLauncherScripts(absRoot)
+		if diskErr != nil {
+			return diskErr
+		}
+		for _, f := range diskFindings {
+			if f.Status == "violation" {
+				return mcpDaemonValidationError("disk launcher script %s verification failed: %s", f.ToolID, f.Message)
+			}
+		}
+	}
+	return nil
+}
+
+type selfInstallPreImage struct {
+	rel     string
+	existed bool
+	data    []byte
+	mode    os.FileMode
+}
+
+func captureSelfInstallPreImage(wsRoot *os.Root, absRoot, rel string) (selfInstallPreImage, error) {
+	img := selfInstallPreImage{rel: rel}
+	f, _, err := openLocalFileInRoot(wsRoot, absRoot, rel)
+	if errors.Is(err, os.ErrNotExist) {
+		return img, nil
+	}
+	if err != nil {
+		return img, err
+	}
+	info, statErr := f.Stat()
+	data, readErr := io.ReadAll(f)
+	closeErr := f.Close()
+	if statErr != nil {
+		return img, statErr
+	}
+	if readErr != nil {
+		return img, readErr
+	}
+	if closeErr != nil {
+		return img, closeErr
+	}
+	img.existed = true
+	img.data = data
+	img.mode = info.Mode().Perm()
+	return img, nil
+}
+
+func restoreSelfInstallPreImage(wsRoot *os.Root, absRoot string, img selfInstallPreImage) {
+	clean := filepath.Clean(img.rel)
+	dirRel := filepath.Dir(clean)
+	baseName := filepath.Base(clean)
+
+	targetRoot := wsRoot
+	targetAbs := absRoot
+	var owned []*os.Root
+	defer func() {
+		for i := len(owned) - 1; i >= 0; i-- {
+			_ = owned[i].Close()
+		}
+	}()
+	if dirRel != "." && dirRel != "" {
+		for _, part := range strings.Split(filepath.ToSlash(dirRel), "/") {
+			if part == "" || part == "." {
+				continue
+			}
+			nextAbs := filepath.Join(targetAbs, part)
+			info, err := targetRoot.Lstat(part)
+			if err != nil {
+				return
+			}
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, nextAbs)
+			if linkErr != nil || link || !info.IsDir() {
+				return
+			}
+			next, openErr := targetRoot.OpenRoot(part)
+			if openErr != nil {
+				return
+			}
+			owned = append(owned, next)
+			targetRoot = next
+			targetAbs = nextAbs
+		}
+	}
+
+	if !img.existed {
+		if info, err := targetRoot.Lstat(baseName); err == nil {
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(targetAbs, baseName))
+			if linkErr == nil && !link && info.Mode().IsRegular() {
+				_ = targetRoot.Remove(baseName)
+			}
+		}
+		return
+	}
+	_ = writeFileAtomicallyInRoot(targetRoot, targetAbs, baseName, img.data, img.mode, false, nil)
+}
+
 func installWorkspaceRuntimeExecutable(root, targetDir string) (string, error) {
-	if !slices.Contains(core.WorkspaceRootCandidates(), targetDir) {
-		if _, err := validateTargetToolsDirInput(targetDir); err != nil {
+	isStorageRoot := slices.Contains(core.WorkspaceRootCandidates(), targetDir)
+	var cleanToolsDir string
+	if !isStorageRoot {
+		var err error
+		cleanToolsDir, err = validateTargetToolsDirInput(targetDir)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -331,6 +953,40 @@ func installWorkspaceRuntimeExecutable(root, targetDir string) (string, error) {
 			_ = wsRoot.Close()
 		}
 	}()
+
+	var preImages []selfInstallPreImage
+	if !isStorageRoot {
+		// Read-only preflight before creating targetDir or writing binary/.mcp.json.
+		if _, _, _, _, _, _, _, mcpErr := parseAndValidateMCPJSONRaw(wsRoot, absRoot); mcpErr != nil {
+			return "", mcpErr
+		}
+		if tcErr := reconcileWorkspaceToolchainYAML(wsRoot, absRoot, cleanToolsDir, binName, ""); tcErr != nil {
+			return "", tcErr
+		}
+
+		prePaths := []string{
+			filepath.Join(cleanToolsDir, binName),
+			".mcp.json",
+			"start.ps1",
+			"start.sh",
+		}
+		if storageDir, hasStorage, storErr := resolveDaemonStorageDirName(wsRoot, absRoot); storErr == nil && hasStorage {
+			prePaths = append(prePaths, filepath.Join(storageDir, "toolchain.yaml"))
+		}
+		for _, p := range prePaths {
+			img, imgErr := captureSelfInstallPreImage(wsRoot, absRoot, p)
+			if imgErr != nil {
+				return "", imgErr
+			}
+			preImages = append(preImages, img)
+		}
+	}
+
+	rollbackAll := func() {
+		for i := len(preImages) - 1; i >= 0; i-- {
+			restoreSelfInstallPreImage(wsRoot, absRoot, preImages[i])
+		}
+	}
 
 	targetHandle, targetDirAbs, _, err := ensureAndOpenTargetToolsDir(wsRoot, absRoot, targetDir)
 	if err != nil {
@@ -418,13 +1074,32 @@ func installWorkspaceRuntimeExecutable(root, targetDir string) (string, error) {
 
 	srcClosed = true
 	if err := srcFile.Close(); err != nil {
+		rollbackAll()
 		return "", fmt.Errorf("close source runtime executable: %w", err)
 	}
 
 	targetClosed = true
 	if err := targetHandle.Close(); err != nil {
+		rollbackAll()
 		return "", fmt.Errorf("close target directory %s: %w", targetDir, err)
 	}
+
+	if !isStorageRoot {
+		installedSHA256, sumErr := sha256FileInRoot(wsRoot, absRoot, filepath.Join(cleanToolsDir, binName))
+		if sumErr != nil {
+			rollbackAll()
+			return "", sumErr
+		}
+		if mcpErr := configureWorkspaceMCPJSON(wsRoot, absRoot, cleanToolsDir, binName); mcpErr != nil {
+			rollbackAll()
+			return "", mcpErr
+		}
+		if tcErr := reconcileWorkspaceToolchainYAML(wsRoot, absRoot, cleanToolsDir, binName, installedSHA256); tcErr != nil {
+			rollbackAll()
+			return "", tcErr
+		}
+	}
+
 	wsClosed = true
 	if err := wsRoot.Close(); err != nil {
 		return "", fmt.Errorf("close workspace root: %w", err)
