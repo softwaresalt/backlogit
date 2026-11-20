@@ -4900,3 +4900,10 @@
 {"seq":4902,"timestamp":"2026-11-20T02:23:52.5897582Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.002-T","schema_version":1}}
 {"seq":4903,"timestamp":"2026-11-20T02:23:52.7202932Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.003-T","schema_version":1}}
 {"seq":4904,"timestamp":"2026-11-20T02:23:52.8490109Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.004-T","schema_version":1}}
+{"seq":4905,"timestamp":"2026-11-20T02:41:57.2747823Z","event_type":"create_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["status","id","title"],"item_id":"218.007-T","schema_version":1,"status_delta":{"from":"","to":"queued"},"title_delta":{"from":"","to":"Confine init workspace and storage bootstrap default writes to pinned os.Root handles (U4a)"}}}
+{"seq":4906,"timestamp":"2026-11-20T02:44:56.4148057Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.007-T","schema_version":1}}
+{"seq":4907,"timestamp":"2026-11-20T02:44:56.5434462Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.001-T","schema_version":1}}
+{"seq":4908,"timestamp":"2026-11-20T02:44:56.6703472Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.002-T","schema_version":1}}
+{"seq":4909,"timestamp":"2026-11-20T02:44:56.8952888Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"218.004-T","schema_version":1}}
+{"seq":4910,"timestamp":"2026-11-20T02:44:57.3859085Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"218.005-T","schema_version":1}}
+{"seq":4911,"timestamp":"2026-11-20T02:44:57.7992891Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","item_id":"218-F","schema_version":1}}
