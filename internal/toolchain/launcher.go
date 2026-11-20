@@ -71,7 +71,7 @@ func VerifyProposedLauncherScripts(rootPath string, m *ToolchainManifest, startP
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("inspect %s: %w", script.name, statErr)
 		}
-		findings = append(findings, inspectLauncher(root, abs, script.name, string(script.bytes), &manifestCopy)...)
+		findings = append(findings, inspectLauncher(root, abs, script.name, string(script.bytes), &manifestCopy, true)...)
 	}
 	return findings, nil
 }
@@ -289,7 +289,7 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 		if closeErr != nil {
 			return nil, fmt.Errorf("close launcher %s: %w", name, closeErr)
 		}
-		findings = append(findings, inspectLauncher(root, abs, name, string(data), m)...)
+		findings = append(findings, inspectLauncher(root, abs, name, string(data), m, false)...)
 	}
 	return findings, nil
 }
@@ -299,20 +299,21 @@ func verifyLaunchers(rootPath string, m *ToolchainManifest) ([]ToolVerificationF
 // direct local invocations can establish positive evidence. Unknown control
 // flow, interpolation or command substitution always prevents verification.
 type launcherProfile struct {
-	root      *os.Root
-	abs       string
-	name      string
-	ps        bool
-	vars      map[string]string
-	state     map[string]string
-	guards    map[string]bool
-	manifest  *ToolchainManifest
-	findings  []ToolVerificationFinding
-	backlogit bool
+	root            *os.Root
+	abs             string
+	name            string
+	ps              bool
+	allowPreInstall bool
+	vars            map[string]string
+	state           map[string]string
+	guards          map[string]bool
+	manifest        *ToolchainManifest
+	findings        []ToolVerificationFinding
+	backlogit       bool
 }
 
-func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest) []ToolVerificationFinding {
-	p := launcherProfile{root: root, abs: abs, name: name, ps: name == "start.ps1",
+func inspectLauncher(root *os.Root, abs, name, data string, m *ToolchainManifest, allowPreInstall bool) []ToolVerificationFinding {
+	p := launcherProfile{root: root, abs: abs, name: name, ps: name == "start.ps1", allowPreInstall: allowPreInstall,
 		vars: make(map[string]string), state: make(map[string]string), guards: make(map[string]bool), manifest: m}
 	if p.ps {
 		p.vars["psscriptroot"] = abs
@@ -604,7 +605,7 @@ func (p *launcherProfile) invoke(line string) {
 	}
 	if err := verifyLocalTool(p.root, p.abs, *tool); err != nil {
 		allowPreInstall := false
-		if isBacklogitTool(p.abs, *tool) && errors.Is(err, os.ErrNotExist) {
+		if p.allowPreInstall && isBacklogitTool(p.abs, *tool) && errors.Is(err, os.ErrNotExist) {
 			if relExec, relErr := relativePath(p.abs, tool.ExecutablePath, true); relErr == nil {
 				if f, openErr := openLocal(p.root, p.abs, relExec); errors.Is(openErr, os.ErrNotExist) {
 					if preErr := verifyPreInstallBacklogitTool(p.root, p.abs, p.manifest, *tool); preErr == nil {

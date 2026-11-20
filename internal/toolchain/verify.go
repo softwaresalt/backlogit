@@ -247,6 +247,11 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	}
 	m.WorkspaceRoot = abs
 	if hasRawYAMLKey(&node, "tools_dir") || m.ToolsDir != "" {
+		if valNode, ok := findRawYAMLMappingNode(&node, "tools_dir"); ok {
+			if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
+				return nil, fmt.Errorf("invalid manifest tools_dir scalar type: %w", blerrors.ErrValidation)
+			}
+		}
 		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
 			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
 		}
@@ -265,17 +270,22 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	return &m, nil
 }
 
-func hasRawYAMLKey(document *yaml.Node, key string) bool {
+func findRawYAMLMappingNode(document *yaml.Node, key string) (*yaml.Node, bool) {
 	if document == nil || len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return false
+		return nil, false
 	}
 	mapping := document.Content[0]
 	for i := 0; i < len(mapping.Content); i += 2 {
 		if foldJSONKey(mapping.Content[i].Value) == foldJSONKey(key) {
-			return true
+			return mapping.Content[i+1], true
 		}
 	}
-	return false
+	return nil, false
+}
+
+func hasRawYAMLKey(document *yaml.Node, key string) bool {
+	_, ok := findRawYAMLMappingNode(document, key)
+	return ok
 }
 
 func validateYAMLKeys(node *yaml.Node) error {
@@ -406,8 +416,10 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	if toolsDir != strings.TrimSpace(toolsDir) || strings.TrimSpace(toolsDir) == "" {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
-	if strings.ContainsRune(toolsDir, '\x00') {
-		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+	for _, r := range toolsDir {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
+		}
 	}
 	if filepath.IsAbs(toolsDir) || filepath.VolumeName(toolsDir) != "" || hasDriveOrUNCPrefix(toolsDir) {
 		return "", fmt.Errorf("invalid tools_dir %q: %w", toolsDir, blerrors.ErrValidation)

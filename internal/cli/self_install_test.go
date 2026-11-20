@@ -552,6 +552,29 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 		assert.Equal(t, "./.tools/bin/"+binName, bl["command"])
 		assert.Equal(t, []any{"mcp", "--cwd", root}, bl["args"])
 
+		// Mixed-case keys in .mcp.json backlogit entry must be stripped without leaving duplicates.
+		writeFile(t, root, ".mcp.json", fmt.Sprintf(`{"otherTopLevel":{"keep":true},"mcpServers":{"sibling":{"type":"stdio","command":"./.bin/sibling"},"backlogit":{"Type":"STDIO","COMMAND":"./.tools/bin/%s","Args":["mcp"],"tools":["*"]}}}`, binName))
+		_, caseErr := installWorkspaceRuntimeExecutable(root, ".tools/bin")
+		require.NoError(t, caseErr)
+
+		mcpBytes2, readErr2 := os.ReadFile(filepath.Join(root, ".mcp.json"))
+		require.NoError(t, readErr2)
+		var parsed2 map[string]any
+		require.NoError(t, json.Unmarshal(mcpBytes2, &parsed2))
+		assert.Contains(t, parsed2, "otherTopLevel")
+		servers2, ok := parsed2["mcpServers"].(map[string]any)
+		require.True(t, ok, "mcpServers must be a JSON object")
+		assert.Contains(t, servers2, "sibling")
+		bl2, ok := servers2["backlogit"].(map[string]any)
+		require.True(t, ok, "mcpServers.backlogit must be a JSON object")
+		assert.Equal(t, "stdio", bl2["type"])
+		assert.Equal(t, "./.tools/bin/"+binName, bl2["command"])
+		assert.Equal(t, []any{"mcp", "--cwd", root}, bl2["args"])
+		assert.Equal(t, []any{"*"}, bl2["tools"])
+		assert.NotContains(t, bl2, "Type")
+		assert.NotContains(t, bl2, "COMMAND")
+		assert.NotContains(t, bl2, "Args")
+
 		cfgAfter, cfgErr := os.ReadFile(filepath.Join(root, ".backlog", "config.yaml"))
 		require.NoError(t, cfgErr)
 		assert.Equal(t, cfgBody, string(cfgAfter))
@@ -734,9 +757,11 @@ host_prerequisites:
 		_, mismatchErr := installWorkspaceRuntimeExecutable(mismatchRoot, ".tools/bin")
 		require.ErrorIs(t, mismatchErr, corerrors.ErrValidation)
 		assert.NoDirExists(t, filepath.Join(mismatchRoot, ".tools"))
-		gotMCP, _ := os.ReadFile(filepath.Join(mismatchRoot, ".mcp.json"))
+		gotMCP, err := os.ReadFile(filepath.Join(mismatchRoot, ".mcp.json"))
+		require.NoError(t, err)
 		assert.Equal(t, origMCP, string(gotMCP))
-		gotTC, _ := os.ReadFile(filepath.Join(mismatchRoot, ".backlog", "toolchain.yaml"))
+		gotTC, err := os.ReadFile(filepath.Join(mismatchRoot, ".backlog", "toolchain.yaml"))
+		require.NoError(t, err)
 		assert.Equal(t, origToolchain, string(gotTC))
 
 		// 2. Aliased tool whose LockfilePath only mentions "backlog-alias" (not canonical "backlogit") fails closed.
@@ -801,7 +826,8 @@ host_prerequisites:
 		_, launcherErr := installWorkspaceRuntimeExecutable(badLauncherRoot, ".tools/bin")
 		require.ErrorIs(t, launcherErr, corerrors.ErrValidation)
 		assert.NoDirExists(t, filepath.Join(badLauncherRoot, ".tools"))
-		gotPS1, _ := os.ReadFile(filepath.Join(badLauncherRoot, "start.ps1"))
+		gotPS1, err := os.ReadFile(filepath.Join(badLauncherRoot, "start.ps1"))
+		require.NoError(t, err)
 		assert.Equal(t, badPS1, string(gotPS1))
 
 		// 4. Conflicting non-stdio transport in .mcp.json and unknown YAML field in toolchain.yaml fail closed.
@@ -811,7 +837,8 @@ host_prerequisites:
 		_, nonStdioErr := installWorkspaceRuntimeExecutable(nonStdioRoot, ".tools/bin")
 		require.ErrorIs(t, nonStdioErr, corerrors.ErrValidation)
 		assert.NoDirExists(t, filepath.Join(nonStdioRoot, ".tools"))
-		gotNonStdio, _ := os.ReadFile(filepath.Join(nonStdioRoot, ".mcp.json"))
+		gotNonStdio, err := os.ReadFile(filepath.Join(nonStdioRoot, ".mcp.json"))
+		require.NoError(t, err)
 		assert.Equal(t, origNonStdio, string(gotNonStdio))
 
 		// 5. Rollback on mid-flight .mcp.json failure via selfInstallBeforeIgnoreReplaceHook.
@@ -826,20 +853,20 @@ host_prerequisites:
 			}
 			mcpPath := filepath.Join(rollbackRoot, ".mcp.json")
 			if runtime.GOOS == "windows" {
-				out, lErr := exec.Command("cmd", "/c", "mklink", mcpPath, outsideFile).CombinedOutput()
-				if lErr != nil {
-					_ = os.MkdirAll(mcpPath, 0o755)
-				} else {
-					_ = out
+				if out, lErr := exec.Command("cmd", "/c", "mklink", mcpPath, outsideFile).CombinedOutput(); lErr != nil {
+					t.Logf("unprivileged file symlink unavailable on Windows (%s); falling back to directory redirect target", out)
+					require.NoError(t, os.MkdirAll(mcpPath, 0o755))
 				}
 			} else {
-				_ = os.Symlink(outsideFile, mcpPath)
+				require.NoError(t, os.Symlink(outsideFile, mcpPath))
 			}
 		}
 		_, rbErr := installWorkspaceRuntimeExecutable(rollbackRoot, ".tools/bin")
 		require.ErrorIs(t, rbErr, corerrors.ErrValidation)
 		assert.NoFileExists(t, filepath.Join(rollbackRoot, ".tools", "bin", binName))
-		gotOutside, _ := os.ReadFile(outsideFile)
+		assert.NoDirExists(t, filepath.Join(rollbackRoot, ".tools"))
+		gotOutside, err := os.ReadFile(outsideFile)
+		require.NoError(t, err)
 		assert.Equal(t, "untouched\n", string(gotOutside))
 	})
 }

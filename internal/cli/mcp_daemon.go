@@ -1089,6 +1089,9 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 			return "", false, err
 		}
 		if strings.TrimSpace(bt.LockfilePath) != "" {
+			if err := validateDaemonLockfileRel(bt.LockfilePath); err != nil {
+				return "", false, err
+			}
 			lockData, lockErr := readLocalFileInRoot(root, absWorkspace, bt.LockfilePath, maxMCPDaemonInfoBytes)
 			if lockErr != nil {
 				return "", false, mcpDaemonValidationError("read backlogit lockfile_path %q: %v", bt.LockfilePath, lockErr)
@@ -1110,7 +1113,10 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 	if verifyErr != nil {
 		return "", false, mcpDaemonValidationError("verify unchanged toolchain inventory: %v", verifyErr)
 	}
-	if report == nil || !report.Valid || report.Violations > 0 {
+	if report == nil {
+		return "", false, mcpDaemonValidationError("toolchain.yaml verification returned nil report")
+	}
+	if !report.Valid || report.Violations > 0 {
 		return "", false, mcpDaemonValidationError("toolchain.yaml contains %d inventory violation(s)", report.Violations)
 	}
 
@@ -1328,12 +1334,38 @@ func validateDaemonToolsDirRel(toolsDir string) (string, error) {
 	return clean, nil
 }
 
+func validateDaemonLockfileRel(lockPath string) error {
+	if lockPath != strings.TrimSpace(lockPath) || strings.TrimSpace(lockPath) == "" {
+		return mcpDaemonValidationError("lockfile_path %q must not be empty or whitespace-padded", lockPath)
+	}
+	for _, r := range lockPath {
+		if r < 0x20 || r == 0x7f {
+			return mcpDaemonValidationError("lockfile_path %q must not contain control characters", lockPath)
+		}
+	}
+	if filepath.IsAbs(lockPath) || filepath.VolumeName(lockPath) != "" || hasDriveOrUNCPrefix(lockPath) {
+		return mcpDaemonValidationError("lockfile_path %q must be a workspace-relative path", lockPath)
+	}
+	for _, part := range strings.FieldsFunc(lockPath, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return mcpDaemonValidationError("lockfile_path %q must not contain '..' traversal", lockPath)
+		}
+	}
+	clean := filepath.Clean(filepath.FromSlash(strings.ReplaceAll(lockPath, "\\", "/")))
+	if !filepath.IsLocal(clean) || clean == "." {
+		return mcpDaemonValidationError("lockfile_path %q resolves outside workspace", lockPath)
+	}
+	return nil
+}
+
 func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
 	if command != strings.TrimSpace(command) || strings.TrimSpace(command) == "" {
 		return "", mcpDaemonValidationError("backlogit command %q must not be empty or whitespace-padded", command)
 	}
-	if strings.ContainsRune(command, '\x00') {
-		return "", mcpDaemonValidationError("backlogit command %q must not contain NUL bytes", command)
+	for _, r := range command {
+		if r < 0x20 || r == 0x7f {
+			return "", mcpDaemonValidationError("backlogit command %q must not contain control characters", command)
+		}
 	}
 	for _, part := range strings.FieldsFunc(command, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if part == ".." {

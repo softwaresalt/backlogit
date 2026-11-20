@@ -454,21 +454,63 @@ func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, 
 		}
 	}
 
-	tmpDefaultsDir, err := os.MkdirTemp("", "backlogit-init-defaults-*")
-	if err != nil {
+	stageRel := fmt.Sprintf(".init-stage-%d-%d", os.Getpid(), selfInstallTempSeq.Add(1))
+	if err := storageHandle.Mkdir(stageRel, 0o700); err != nil {
 		return fmt.Errorf("create defaults staging dir: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(tmpDefaultsDir) }()
+	stageHandle, err := storageHandle.OpenRoot(stageRel)
+	if err != nil {
+		_ = storageHandle.Remove(stageRel)
+		return fmt.Errorf("open defaults staging dir: %w", err)
+	}
+	stageAbs := filepath.Join(storageAbs, stageRel)
+	cleanupStage := func() {
+		for _, f := range []string{"config.yaml", "registry.yaml", "header-def.yaml", "stash.jsonl", "hooks.yaml", "migration.yaml"} {
+			_ = stageHandle.Remove(f)
+		}
+		if tplStage, openErr := stageHandle.OpenRoot("templates"); openErr == nil {
+			if dirF, dErr := tplStage.Open("."); dErr == nil {
+				if ents, rErr := dirF.ReadDir(-1); rErr == nil {
+					for _, e := range ents {
+						_ = tplStage.Remove(e.Name())
+					}
+				}
+				_ = dirF.Close()
+			}
+			_ = tplStage.Close()
+		}
+		_ = stageHandle.Remove("templates")
+		_ = stageHandle.Remove("queue")
+		_ = stageHandle.Close()
+		_ = storageHandle.Remove(stageRel)
+	}
+	defer cleanupStage()
 
-	if err := config.WriteDefaults(tmpDefaultsDir); err != nil {
+	if err := config.WriteDefaults(stageAbs); err != nil {
 		return fmt.Errorf("render defaults: %w", err)
 	}
-	if err := config.WriteMigrationDefaults(tmpDefaultsDir); err != nil {
+	if err := config.WriteMigrationDefaults(stageAbs); err != nil {
 		return fmt.Errorf("render migration defaults: %w", err)
 	}
 
+	readStagedFile := func(h *os.Root, name string) ([]byte, error) {
+		f, openErr := h.Open(name)
+		if openErr != nil {
+			return nil, openErr
+		}
+		data, readErr := io.ReadAll(f)
+		closeErr := f.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		return data, nil
+	}
+
 	for _, name := range []string{"config.yaml", "registry.yaml", "header-def.yaml", "stash.jsonl", "hooks.yaml", "migration.yaml"} {
-		data, readErr := os.ReadFile(filepath.Join(tmpDefaultsDir, name))
+		data, readErr := readStagedFile(stageHandle, name)
 		if readErr != nil {
 			return fmt.Errorf("read staged default %s: %w", name, readErr)
 		}
@@ -478,21 +520,107 @@ func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, 
 	}
 
 	templatesAbs := filepath.Join(storageAbs, "templates")
-	tplEntries, err := os.ReadDir(filepath.Join(tmpDefaultsDir, "templates"))
+	tplStageHandle, err := stageHandle.OpenRoot("templates")
+	if err != nil {
+		return fmt.Errorf("open staged templates: %w", err)
+	}
+	defer func() { _ = tplStageHandle.Close() }()
+	tplStageDir, err := tplStageHandle.Open(".")
 	if err != nil {
 		return fmt.Errorf("list staged templates: %w", err)
+	}
+	tplEntries, err := tplStageDir.ReadDir(-1)
+	_ = tplStageDir.Close()
+	if err != nil {
+		return fmt.Errorf("read staged templates dir: %w", err)
 	}
 	for _, entry := range tplEntries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
 		}
-		data, readErr := os.ReadFile(filepath.Join(tmpDefaultsDir, "templates", entry.Name()))
+		data, readErr := readStagedFile(tplStageHandle, entry.Name())
 		if readErr != nil {
 			return fmt.Errorf("read staged template %s: %w", entry.Name(), readErr)
 		}
 		if err := writeBootstrapFileIfNotExistsInRoot(templatesHandle, templatesAbs, entry.Name(), data); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel string) error {
+	absRoot, wsRoot, err := openOrCreateValidatedWorkspaceRoot(cleanRoot, false)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = wsRoot.Close() }()
+
+	if _, _, _, _, _, _, _, mcpErr := parseAndValidateMCPJSONRaw(wsRoot, absRoot); mcpErr != nil {
+		return mcpErr
+	}
+	binName := pinnedDaemonBinaryName()
+	if srcPath, srcErr := selfInstallExecutablePathFn(); srcErr == nil && strings.EqualFold(filepath.Ext(srcPath), ".exe") {
+		binName = "backlogit.exe"
+	}
+	if tcErr := reconcileWorkspaceToolchainYAML(wsRoot, absRoot, toolsDirRel, binName, ""); tcErr != nil {
+		return tcErr
+	}
+
+	checkRegularIfExists := func(dirHandle *os.Root, dirAbs, fileName string) error {
+		info, statErr := dirHandle.Lstat(fileName)
+		if errors.Is(statErr, os.ErrNotExist) {
+			return nil
+		}
+		if statErr != nil {
+			return fmt.Errorf("inspect %s: %w", fileName, statErr)
+		}
+		link, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(dirAbs, fileName))
+		if linkErr != nil || link || !info.Mode().IsRegular() {
+			return fmt.Errorf("%s is redirected or not a regular file: %w", fileName, corerrors.ErrValidation)
+		}
+		return nil
+	}
+	if err := checkRegularIfExists(wsRoot, absRoot, ".gitignore"); err != nil {
+		return err
+	}
+	gitInfo, gitErr := wsRoot.Lstat(".git")
+	if gitErr == nil {
+		gitAbs := filepath.Join(absRoot, ".git")
+		gitLink, linkErr := core.IsSymlinkOrReparsePoint(gitInfo, gitAbs)
+		if linkErr != nil || gitLink {
+			return fmt.Errorf(".git is redirected: %w", corerrors.ErrValidation)
+		}
+		if gitInfo.IsDir() {
+			gitRoot, openGitErr := wsRoot.OpenRoot(".git")
+			if openGitErr != nil {
+				return fmt.Errorf("open .git root: %w", openGitErr)
+			}
+			defer func() { _ = gitRoot.Close() }()
+			infoStat, infoErr := gitRoot.Lstat("info")
+			if infoErr == nil {
+				infoAbs := filepath.Join(gitAbs, "info")
+				infoLink, infoLinkErr := core.IsSymlinkOrReparsePoint(infoStat, infoAbs)
+				if infoLinkErr != nil || infoLink || !infoStat.IsDir() {
+					return fmt.Errorf(".git/info is redirected or not a directory: %w", corerrors.ErrValidation)
+				}
+				gitInfoRoot, openInfoErr := gitRoot.OpenRoot("info")
+				if openInfoErr != nil {
+					return fmt.Errorf("open .git/info root: %w", openInfoErr)
+				}
+				defer func() { _ = gitInfoRoot.Close() }()
+				if err := checkRegularIfExists(gitInfoRoot, infoAbs, "exclude"); err != nil {
+					return err
+				}
+			} else if !errors.Is(infoErr, os.ErrNotExist) {
+				return fmt.Errorf("inspect .git/info: %w", infoErr)
+			}
+		}
+	} else if !errors.Is(gitErr, os.ErrNotExist) {
+		return fmt.Errorf("inspect .git: %w", gitErr)
 	}
 	return nil
 }
@@ -529,7 +657,7 @@ func resolveInitTargetToolsDir(cmd *cobra.Command, cleanRoot, toolsDirFlag strin
 
 	if cmd != nil {
 		if jsonrpcEnabled, flagErr := cmd.Flags().GetBool("jsonrpc"); flagErr == nil && jsonrpcEnabled {
-			return defaultDir, nil
+			return validateCandidate(defaultDir)
 		}
 	}
 
@@ -559,7 +687,7 @@ func resolveInitTargetToolsDir(cmd *cobra.Command, cleanRoot, toolsDirFlag strin
 		}
 	}
 	if !shouldPrompt {
-		return defaultDir, nil
+		return validateCandidate(defaultDir)
 	}
 
 	if _, writeErr := fmt.Fprintf(out, "Target tool install directory [.bin, bin, or custom workspace-relative path] (default: %s): ", defaultDir); writeErr != nil {
@@ -625,6 +753,9 @@ backlogit binary into the chosen target tool directory, and configures .mcp.json
 
 			toolsDirRel, err := resolveInitTargetToolsDir(cmd, cleanRoot, toolsDirFlag)
 			if err != nil {
+				return err
+			}
+			if err := preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel); err != nil {
 				return err
 			}
 

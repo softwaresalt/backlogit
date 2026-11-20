@@ -3,7 +3,7 @@ title: "219-S served-root handoff and execution authorization"
 description: "Served-root handoff outcome record for execution of Shipment 219-S (Feature 218-F)."
 doc_type: memory
 source: docs/memory/2026-11-19/219-s-served-root-handoff.md
-ingested_at: "2026-11-19T21:54:12Z"
+ingested_at: "2026-11-20T05:54:12Z"
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
 docline:

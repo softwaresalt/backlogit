@@ -678,7 +678,12 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 		require.NoError(t, openErr)
 		t.Cleanup(func() { _ = wsHandle.Close() })
 
-		// Pre-install proposed launcher bytes targeting .tools/bin (not yet on disk) pass inspectLauncher with zero violations.
+		// Pre-install proposed launcher bytes targeting .tools/bin (not yet on disk) pass VerifyProposedLauncherScripts and inspectLauncher with zero violations.
+		proposedFindings, vpErr := VerifyProposedLauncherScripts(root, proposed, []byte(launcherPS1(".tools/bin")), []byte(launcherSH(".tools/bin")))
+		require.NoError(t, vpErr)
+		for _, f := range proposedFindings {
+			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must pass without violation: %+v", f)
+		}
 		for _, item := range []struct {
 			name string
 			body string
@@ -686,11 +691,30 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 			{name: "start.ps1", body: launcherPS1(".tools/bin")},
 			{name: "start.sh", body: launcherSH(".tools/bin")},
 		} {
-			findings := inspectLauncher(wsHandle, root, item.name, item.body, proposed)
+			findings := inspectLauncher(wsHandle, root, item.name, item.body, proposed, true)
 			for _, f := range findings {
 				assert.NotEqual(t, "violation", f.Status, "proposed %s must pass without violation: %+v", item.name, f)
 			}
 		}
+
+		// Disk-based VerifyLauncherScripts must still fail closed when the executable is missing on disk.
+		missingBinRoot, _ := u9Workspace(t)
+		u9Write(t, missingBinRoot, ".bin/backlogit.exe", string(binBytes))
+		u9Write(t, missingBinRoot, "start.ps1", launcherPS1(".bin"))
+		u9Write(t, missingBinRoot, "start.sh", launcherSH(".bin"))
+		u9Write(t, missingBinRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, missingBinRoot))
+		require.NoError(t, WriteToolchainManifest(missingBinRoot, newRelManifest(".bin")))
+		require.NoError(t, os.Remove(filepath.Join(missingBinRoot, ".bin", "backlogit.exe")))
+		diskFindings, diskErr := VerifyLauncherScripts(missingBinRoot)
+		require.NoError(t, diskErr)
+		hasDiskViolation := false
+		for _, f := range diskFindings {
+			if f.Status == "violation" {
+				hasDiskViolation = true
+				break
+			}
+		}
+		assert.True(t, hasDiskViolation, "VerifyLauncherScripts must fail closed when backlogit binary is missing on disk")
 
 		// Un-migrated (still pointing to bin), missing guard, missing --cwd, or ambient PATH lookup produce violation findings.
 		badPS1Cases := []string{
@@ -700,7 +724,7 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 			launcherPS1(".tools/bin") + "$companion = (Get-Command \"engram\")\n",
 		}
 		for _, badBody := range badPS1Cases {
-			findings := inspectLauncher(wsHandle, root, "start.ps1", badBody, proposed)
+			findings := inspectLauncher(wsHandle, root, "start.ps1", badBody, proposed, true)
 			hasViolation := false
 			for _, f := range findings {
 				if f.Status == "violation" {
