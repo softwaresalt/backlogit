@@ -4,7 +4,7 @@ tuned_at: "2026-11-18T23:52:47Z"
 gsd_version: "1.6.0"
 gsd_home: "C:\\Source\\GitHub\\backlogit\\.bin"
 profile_hash: "afd99db4806ac1832083c62b84722bb85307e9e1dd349aca2697976640fe479d"
-config_hash: "1bd51a551e52b75e94edd25d2bc27e9e8bc696752b7474c3f75683a1dff0f10e"
+config_hash: "2b114a784fdf277e9552280767f798d706695eb8d5e191573486409011096157"
 install_preset: full
 capability_packs:
   - backlogit

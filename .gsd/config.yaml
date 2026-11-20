@@ -48,30 +48,30 @@ model_routing:
     reasoning_effort: "high"  # Leave empty to use model default
     context_tier: "long_context"        # context-capacity class (default | long_context)
   tier2:
-    model: mai-code-2              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
+    model: claude-sonnet-5.5              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
+    model_provider: "anthropic"
     reasoning_effort: "high"
-    model_provider: "microsoft"
-    model_family: "mai-code-2"
-    context_tier: "long_context"     # default | long_context
+    model_family: "claude-sonnet-5.5"
+    context_tier: "default"
   tier3:
-    model: gemini-4-carbon              # Frontier: planning, architecture, analysis (e.g., claude-sonnet-5)
+    model: gemini-4-argon              # Frontier: planning, architecture, analysis (e.g., claude-sonnet-5)
     reasoning_effort: "high"
     model_provider: "google"
-    model_family: "gemini-4-carbon"
+    model_family: "gemini-4-argon"
     context_tier: "long_context"
   orchestrator:
     model_provider: "google"
-    model_family: "gemini-4-carbon"
-    reasoning_effort: "medium"
+    model_family: "gemini-4-argon"
+    reasoning_effort: "high"
     context_tier: "long_context"
   stage:
     model_provider: "google"
-    model_family: "gemini-4-carbon"             # Stage role route (falls back to tier3 when empty)
-    reasoning_effort: "medium"
+    model_family: "gemini-4-argon"             # Stage role route (falls back to tier3 when empty)
+    reasoning_effort: "high"
     context_tier: "long_context"
     escalation:
       model_provider: "openai"
-      model_family: "gpt-6.2-sol"
+      model_family: "gpt-6.1-sol"
       reasoning_effort: "high"
       context_tier: "long_context"
   ship:
@@ -80,13 +80,13 @@ model_routing:
     reasoning_effort: "high"
     context_tier: "long_context" 
     escalation:
-      model_family: "gpt-6.2-sol"
+      model_family: "gpt-6.1-sol"
       model_provider: "openai"
       reasoning_effort: "medium"
       context_tier: "long_context"
   anchor_review:
     model_provider: "openai"
-    model_family: "gpt-6.2-sol"
+    model_family: "gpt-6.1-sol"
     reasoning_effort: "high"
 
   alt_doc_review:
