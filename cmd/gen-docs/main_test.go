@@ -174,3 +174,40 @@ func TestGenerateDocs_ComplexitySemantics(t *testing.T) {
 		assert.Contains(t, raw, "Default queue ordering does not change")
 	}
 }
+
+func TestGenerateDocs_InitToolsDirReferenceMatchesCommittedPage(t *testing.T) {
+	committedPath := filepath.Join("..", "..", "docs", "cli-reference", "backlogit_init.md")
+	committedBytes, err := os.ReadFile(committedPath)
+	require.NoError(t, err)
+
+	committedMD, err := docline.Decode(committedBytes)
+	require.NoError(t, err)
+	seededIngestedAt := docline.FromMap(committedMD.Frontmatter).IngestedAt
+	require.NotEmpty(t, seededIngestedAt)
+
+	runSeededGen := func(t *testing.T) []byte {
+		t.Helper()
+		outDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(outDir, "backlogit_init.md"), committedBytes, 0o644))
+		require.NoError(t, generateDocs(outDir))
+		generatedBytes, readErr := os.ReadFile(filepath.Join(outDir, "backlogit_init.md"))
+		require.NoError(t, readErr)
+		return generatedBytes
+	}
+
+	t.Run("generated_init_page_documents_tools_dir_flag", func(t *testing.T) {
+		generatedBytes := runSeededGen(t)
+		assert.Contains(t, string(generatedBytes), "--tools-dir")
+
+		genMD, decErr := docline.Decode(generatedBytes)
+		require.NoError(t, decErr)
+		assert.Equal(t, seededIngestedAt, docline.FromMap(genMD.Frontmatter).IngestedAt)
+		require.NoError(t, docline.Validate(docline.FromMap(genMD.Frontmatter), docline.ProfileAuthoring))
+	})
+
+	t.Run("committed_init_page_matches_seeded_generated_output", func(t *testing.T) {
+		generatedBytes := runSeededGen(t)
+		assert.Contains(t, string(committedBytes), "--tools-dir")
+		assert.Equal(t, string(generatedBytes), string(committedBytes))
+	})
+}
