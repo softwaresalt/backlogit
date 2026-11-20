@@ -157,6 +157,20 @@ func openLocal(root *os.Root, absRoot, rel string) (*os.File, error) {
 	return nil, fmt.Errorf("empty path: %w", blerrors.ErrValidation)
 }
 
+func resolveManifestWorkspaceRoot(abs, rawRoot string) (string, error) {
+	if rawRoot == "" || rawRoot != strings.TrimSpace(rawRoot) {
+		return "", fmt.Errorf("invalid workspace_root %q: %w", rawRoot, blerrors.ErrValidation)
+	}
+	if filepath.IsAbs(rawRoot) || filepath.VolumeName(rawRoot) != "" || hasDriveOrUNCPrefix(rawRoot) {
+		declared, err := filepath.Abs(rawRoot)
+		if err != nil {
+			return "", fmt.Errorf("resolve workspace_root %q: %w", rawRoot, blerrors.ErrValidation)
+		}
+		return filepath.Clean(declared), nil
+	}
+	return filepath.Clean(filepath.Join(abs, filepath.FromSlash(strings.ReplaceAll(rawRoot, "\\", "/")))), nil
+}
+
 func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	abs, root, err := workspace(rootPath)
 	if err != nil {
@@ -164,14 +178,30 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	}
 	defer func() { _ = root.Close() }()
 	storage := ""
-	for _, candidate := range []string{".backlog", ".backlogit"} {
-		if _, err := root.Lstat(candidate); err == nil {
-			if storage != "" {
-				return nil, fmt.Errorf("ambiguous workspace storage: %w", blerrors.ErrValidation)
+	if override, hasOverride := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); hasOverride && override != "" {
+		if override != ".backlog" && override != ".backlogit" {
+			return nil, fmt.Errorf("invalid BACKLOGIT_WORKSPACE_DIR %q: %w", override, blerrors.ErrValidation)
+		}
+		info, statErr := root.Lstat(override)
+		if statErr == nil {
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(abs, override))
+			if linkErr != nil || link || !info.IsDir() || info.Mode()&os.ModeIrregular != 0 {
+				return nil, fmt.Errorf("invalid storage directory %s: %w", override, blerrors.ErrValidation)
 			}
-			storage = candidate
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("inspect storage: %w", err)
+			storage = override
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect storage: %w", statErr)
+		}
+	} else {
+		for _, candidate := range []string{".backlog", ".backlogit"} {
+			if _, err := root.Lstat(candidate); err == nil {
+				if storage != "" {
+					return nil, fmt.Errorf("ambiguous workspace storage: %w", blerrors.ErrValidation)
+				}
+				storage = candidate
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("inspect storage: %w", err)
+			}
 		}
 	}
 	if storage == "" {
@@ -209,12 +239,13 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("additional YAML document: %w", blerrors.ErrValidation)
 	}
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.SchemaVersion != "1.0" || m.ContainmentLevel != Level1WorkspaceLocalPinned ||
 		!m.OSContainerSandboxDeferred || strings.TrimSpace(m.WorkspaceRoot) == "" ||
 		err != nil || !samePath(abs, declared) || m.Tools == nil || m.HostPrerequisites == nil {
 		return nil, fmt.Errorf("invalid manifest required fields: %w", blerrors.ErrValidation)
 	}
+	m.WorkspaceRoot = abs
 	if hasRawYAMLKey(&node, "tools_dir") || m.ToolsDir != "" {
 		if _, err := validManifestToolsDir(root, abs, m.ToolsDir); err != nil {
 			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
@@ -456,7 +487,7 @@ func verifyWorkspaceToolchain(ctx context.Context, rootPath string, m *Toolchain
 		return nil, fmt.Errorf("verify toolchain: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.WorkspaceRoot == "" || err != nil || !samePath(abs, declared) {
 		return nil, fmt.Errorf("manifest workspace mismatch: %w", blerrors.ErrValidation)
 	}
@@ -741,7 +772,7 @@ func validateMCPConfigPinning(rootPath, configPath string, m *ToolchainManifest)
 		return nil, fmt.Errorf("validate MCP config: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	declared, err := filepath.Abs(m.WorkspaceRoot)
+	declared, err := resolveManifestWorkspaceRoot(abs, m.WorkspaceRoot)
 	if m.WorkspaceRoot == "" || err != nil || !samePath(abs, declared) {
 		return nil, fmt.Errorf("manifest workspace mismatch: %w", blerrors.ErrValidation)
 	}

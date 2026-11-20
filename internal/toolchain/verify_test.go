@@ -1120,3 +1120,141 @@ host_prerequisites:
 		})
 	})
 }
+
+func TestU2a_LoadAndAuditToolchainManifestHonorsWorkspaceDirOverride(t *testing.T) {
+	binBytes := []byte("pinned binary")
+	binSum := sha256.Sum256(binBytes)
+	binSumHex := hex.EncodeToString(binSum[:])
+
+	writeDualRootWorkspace := func(t *testing.T, root, storageDir, workspaceRootYAML string) {
+		t.Helper()
+		u9Write(t, root, ".bin/backlogit.exe", string(binBytes))
+		u9Write(t, root, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/backlogit.exe","args":["mcp","--cwd",%q]}}}`, root))
+		u9Write(t, root, "start.ps1", `$workspaceRoot = $PSScriptRoot
+$workspaceBinDirectory = Join-Path $workspaceRoot ".bin"
+$backlogitPath = Join-Path $workspaceBinDirectory "backlogit.exe"
+if (-not (Test-Path -LiteralPath $backlogitPath -PathType Leaf)) { throw "Missing ./.bin/backlogit.exe" }
+$env:COPILOT_HOME = Join-Path $workspaceRoot ".copilot"
+$env:ENGRAM_DATA_DIR = Join-Path $workspaceRoot ".engram"
+& $backlogitPath --cwd $workspaceRoot mcp status
+`)
+		u9Write(t, root, "start.sh", `#!/bin/sh
+workspace_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+workspace_bin_directory="$workspace_root/.bin"
+backlogit_path="$workspace_bin_directory/backlogit.exe"
+if [ ! -f "$backlogit_path" ]; then echo "Missing ./.bin/backlogit.exe" >&2; exit 1; fi
+export COPILOT_HOME="$workspace_root/.copilot"
+export ENGRAM_DATA_DIR="$workspace_root/.engram"
+"$backlogit_path" --cwd "$workspace_root" mcp status
+`)
+		quotedWSRoot, err := json.Marshal(workspaceRootYAML)
+		require.NoError(t, err)
+		yamlBody := fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: %s
+tools_dir: ".bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./.bin/backlogit.exe"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, string(quotedWSRoot), binSumHex)
+		u9Write(t, root, filepath.Join(storageDir, "toolchain.yaml"), yamlBody)
+	}
+
+	t.Run("dual_root_override_and_relative_workspace_root_load_verify_and_audit_from_different_cwd", func(t *testing.T) {
+		root, otherDir := u9Workspace(t)
+		writeDualRootWorkspace(t, root, ".backlog", ".")
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+
+		t.Chdir(otherDir)
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlog")
+
+		loadedInternal, err := loadToolchainManifest(root)
+		require.NoError(t, err)
+		require.Equal(t, root, loadedInternal.WorkspaceRoot)
+
+		loaded, err := LoadToolchainManifest(root)
+		require.NoError(t, err)
+		require.Equal(t, root, loaded.WorkspaceRoot)
+
+		relManifest := &ToolchainManifest{
+			SchemaVersion:              "1.0",
+			ContainmentLevel:           Level1WorkspaceLocalPinned,
+			OSContainerSandboxDeferred: true,
+			WorkspaceRoot:              ".",
+			ToolsDir:                   ".bin",
+			Tools: []ToolEntry{
+				{
+					ID:                   "backlogit",
+					Kind:                 "mcp",
+					ContainmentClass:     WorkspaceLocalPinned,
+					ExecutablePath:       "./.bin/backlogit.exe",
+					PinnedVersion:        "1.0.0",
+					SHA256:               binSumHex,
+					WorkspaceBindingArgs: []string{"--cwd", "."},
+				},
+			},
+			HostPrerequisites: []HostPrerequisiteEntry{
+				{ID: "shell", Command: "shell", Purpose: "bootstrap", Reason: "host shell", Required: false},
+			},
+		}
+
+		verifyReport, err := verifyWorkspaceToolchain(context.Background(), root, relManifest)
+		require.NoError(t, err)
+		require.True(t, verifyReport.Valid, "%+v", verifyReport.Tools)
+		require.Zero(t, verifyReport.Violations)
+
+		mcpFindings, err := validateMCPConfigPinning(root, ".mcp.json", relManifest)
+		require.NoError(t, err)
+		require.Len(t, mcpFindings, 1)
+		require.NotEqual(t, "violation", mcpFindings[0].Status, "%+v", mcpFindings[0])
+
+		auditReport, err := AuditRepositoryToolchain(context.Background(), root)
+		require.NoError(t, err)
+		require.True(t, auditReport.Valid, "%+v", auditReport.Tools)
+		require.Zero(t, auditReport.Violations)
+	})
+
+	t.Run("dual_root_without_override_or_mismatched_workspace_root_fails_closed", func(t *testing.T) {
+		root, otherDir := u9Workspace(t)
+		writeDualRootWorkspace(t, root, ".backlog", ".")
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".backlogit"), 0o755))
+		t.Chdir(otherDir)
+
+		for _, envVal := range []string{"", "   ", "invalid", ".git"} {
+			t.Setenv("BACKLOGIT_WORKSPACE_DIR", envVal)
+			_, loadErr := loadToolchainManifest(root)
+			require.ErrorIs(t, loadErr, corerrors.ErrValidation, "override %q must fail closed on dual-root", envVal)
+		}
+
+		for _, badRoot := range []string{"./subdir", "../escape", otherDir} {
+			singleRoot, _ := u9Workspace(t)
+			writeDualRootWorkspace(t, singleRoot, ".backlog", badRoot)
+			t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+			_, loadErr := loadToolchainManifest(singleRoot)
+			require.ErrorIs(t, loadErr, corerrors.ErrValidation, "loadToolchainManifest must reject workspace_root %q", badRoot)
+
+			m := u9PinnedWorkspace(t, singleRoot)
+			m.WorkspaceRoot = badRoot
+			_, verifyErr := verifyWorkspaceToolchain(context.Background(), singleRoot, m)
+			require.ErrorIs(t, verifyErr, corerrors.ErrValidation, "verifyWorkspaceToolchain must reject workspace_root %q", badRoot)
+
+			_, mcpErr := validateMCPConfigPinning(singleRoot, ".mcp.json", m)
+			require.ErrorIs(t, mcpErr, corerrors.ErrValidation, "validateMCPConfigPinning must reject workspace_root %q", badRoot)
+		}
+	})
+}
