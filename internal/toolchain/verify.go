@@ -256,12 +256,6 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 			return nil, fmt.Errorf("invalid manifest tools_dir: %w", err)
 		}
 	}
-	if m.Tools == nil {
-		m.Tools = []ToolEntry{}
-	}
-	if m.HostPrerequisites == nil {
-		m.HostPrerequisites = []HostPrerequisiteEntry{}
-	}
 	for i := range m.Tools {
 		if m.Tools[i].WorkspaceBindingArgs == nil {
 			m.Tools[i].WorkspaceBindingArgs = []string{}

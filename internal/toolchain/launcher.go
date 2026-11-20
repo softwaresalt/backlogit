@@ -908,6 +908,9 @@ func validateManifestForProvisioning(root *os.Root, abs string, manifest *Toolch
 }
 
 func resolveProvisioningStorageDir(root *os.Root) (string, error) {
+	if root == nil {
+		return "", fmt.Errorf("missing workspace root handle: %w", corerrors.ErrValidation)
+	}
 	if override, hasOverride := os.LookupEnv("BACKLOGIT_WORKSPACE_DIR"); hasOverride && override != "" {
 		switch override {
 		case ".backlog", ".backlogit":

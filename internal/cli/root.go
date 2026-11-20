@@ -454,65 +454,15 @@ func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, 
 		}
 	}
 
-	stageRel := fmt.Sprintf(".init-stage-%d-%d", os.Getpid(), selfInstallTempSeq.Add(1))
-	if err := storageHandle.Mkdir(stageRel, 0o700); err != nil {
-		return fmt.Errorf("create defaults staging dir: %w", err)
-	}
-	stageHandle, err := storageHandle.OpenRoot(stageRel)
+	topDefaults, templateDefaults, err := config.RenderDefaultBootstrapFiles()
 	if err != nil {
-		_ = storageHandle.Remove(stageRel)
-		return fmt.Errorf("open defaults staging dir: %w", err)
-	}
-	stageAbs := filepath.Join(storageAbs, stageRel)
-	cleanupStage := func() {
-		for _, f := range []string{"config.yaml", "registry.yaml", "header-def.yaml", "stash.jsonl", "hooks.yaml", "migration.yaml"} {
-			_ = stageHandle.Remove(f)
-		}
-		if tplStage, openErr := stageHandle.OpenRoot("templates"); openErr == nil {
-			if dirF, dErr := tplStage.Open("."); dErr == nil {
-				if ents, rErr := dirF.ReadDir(-1); rErr == nil {
-					for _, e := range ents {
-						_ = tplStage.Remove(e.Name())
-					}
-				}
-				_ = dirF.Close()
-			}
-			_ = tplStage.Close()
-		}
-		_ = stageHandle.Remove("templates")
-		_ = stageHandle.Remove("queue")
-		_ = stageHandle.Close()
-		_ = storageHandle.Remove(stageRel)
-	}
-	defer cleanupStage()
-
-	if err := config.WriteDefaults(stageAbs); err != nil {
 		return fmt.Errorf("render defaults: %w", err)
-	}
-	if err := config.WriteMigrationDefaults(stageAbs); err != nil {
-		return fmt.Errorf("render migration defaults: %w", err)
-	}
-
-	readStagedFile := func(h *os.Root, name string) ([]byte, error) {
-		f, openErr := h.Open(name)
-		if openErr != nil {
-			return nil, openErr
-		}
-		data, readErr := io.ReadAll(f)
-		closeErr := f.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		if closeErr != nil {
-			return nil, closeErr
-		}
-		return data, nil
 	}
 
 	for _, name := range []string{"config.yaml", "registry.yaml", "header-def.yaml", "stash.jsonl", "hooks.yaml", "migration.yaml"} {
-		data, readErr := readStagedFile(stageHandle, name)
-		if readErr != nil {
-			return fmt.Errorf("read staged default %s: %w", name, readErr)
+		data, ok := topDefaults[name]
+		if !ok {
+			return fmt.Errorf("missing rendered default %s", name)
 		}
 		if err := writeBootstrapFileIfNotExistsInRoot(storageHandle, storageAbs, name, data); err != nil {
 			return err
@@ -520,36 +470,15 @@ func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, 
 	}
 
 	templatesAbs := filepath.Join(storageAbs, "templates")
-	tplStageHandle, err := stageHandle.OpenRoot("templates")
-	if err != nil {
-		return fmt.Errorf("open staged templates: %w", err)
-	}
-	defer func() { _ = tplStageHandle.Close() }()
-	tplStageDir, err := tplStageHandle.Open(".")
-	if err != nil {
-		return fmt.Errorf("list staged templates: %w", err)
-	}
-	tplEntries, err := tplStageDir.ReadDir(-1)
-	_ = tplStageDir.Close()
-	if err != nil {
-		return fmt.Errorf("read staged templates dir: %w", err)
-	}
-	for _, entry := range tplEntries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-			continue
-		}
-		data, readErr := readStagedFile(tplStageHandle, entry.Name())
-		if readErr != nil {
-			return fmt.Errorf("read staged template %s: %w", entry.Name(), readErr)
-		}
-		if err := writeBootstrapFileIfNotExistsInRoot(templatesHandle, templatesAbs, entry.Name(), data); err != nil {
+	for fileName, data := range templateDefaults {
+		if err := writeBootstrapFileIfNotExistsInRoot(templatesHandle, templatesAbs, fileName, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel string) error {
+func preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel, storageDirName string) error {
 	absRoot, wsRoot, err := openOrCreateValidatedWorkspaceRoot(cleanRoot, false)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -583,6 +512,62 @@ func preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel string) error {
 			return fmt.Errorf("%s is redirected or not a regular file: %w", fileName, corerrors.ErrValidation)
 		}
 		return nil
+	}
+	checkRelFileIfExists := func(rel string) error {
+		clean := filepath.Clean(rel)
+		if clean == "" || clean == "." || !filepath.IsLocal(clean) {
+			return fmt.Errorf("invalid relative path %q: %w", rel, corerrors.ErrValidation)
+		}
+		parts := strings.Split(clean, string(filepath.Separator))
+		cur := wsRoot
+		curAbs := absRoot
+		var owned []*os.Root
+		defer func() {
+			for i := len(owned) - 1; i >= 0; i-- {
+				_ = owned[i].Close()
+			}
+		}()
+		for i, part := range parts {
+			nextAbs := filepath.Join(curAbs, part)
+			info, statErr := cur.Lstat(part)
+			if errors.Is(statErr, os.ErrNotExist) {
+				return nil
+			}
+			if statErr != nil {
+				return fmt.Errorf("inspect %s: %w", nextAbs, statErr)
+			}
+			link, linkErr := core.IsSymlinkOrReparsePoint(info, nextAbs)
+			if linkErr != nil || link || info.Mode()&os.ModeIrregular != 0 {
+				return fmt.Errorf("%s is redirected or irregular: %w", nextAbs, corerrors.ErrValidation)
+			}
+			if i == len(parts)-1 {
+				if !info.Mode().IsRegular() {
+					return fmt.Errorf("%s is not a regular file: %w", nextAbs, corerrors.ErrValidation)
+				}
+				return nil
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("%s is not a directory: %w", nextAbs, corerrors.ErrValidation)
+			}
+			next, openErr := cur.OpenRoot(part)
+			if openErr != nil {
+				return fmt.Errorf("open %s: %w", nextAbs, openErr)
+			}
+			owned = append(owned, next)
+			cur = next
+			curAbs = nextAbs
+		}
+		return nil
+	}
+	if storageDirName != "" {
+		if err := checkRelFileIfExists(filepath.Join(storageDirName, binName)); err != nil {
+			return err
+		}
+	}
+	if toolsDirRel != "" {
+		if err := checkRelFileIfExists(filepath.Join(toolsDirRel, binName)); err != nil {
+			return err
+		}
 	}
 	if err := checkRegularIfExists(wsRoot, absRoot, ".gitignore"); err != nil {
 		return err
@@ -755,7 +740,16 @@ backlogit binary into the chosen target tool directory, and configures .mcp.json
 			if err != nil {
 				return err
 			}
-			if err := preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel); err != nil {
+
+			storageDirName := core.WorkspaceRootCandidates()[0]
+			if cmd.CalledAs() == "install" {
+				resolvedDir, err := resolveInstallStorageDir(cleanRoot)
+				if err != nil {
+					return err
+				}
+				storageDirName = resolvedDir
+			}
+			if err := preflightInitWorkspaceRuntime(cleanRoot, toolsDirRel, storageDirName); err != nil {
 				return err
 			}
 
@@ -771,14 +765,7 @@ backlogit binary into the chosen target tool directory, and configures .mcp.json
 			}()
 			cleanRoot = validatedRoot
 
-			storageDirName := core.WorkspaceRootCandidates()[0]
-			if cmd.CalledAs() == "install" {
-				resolvedDir, err := resolveInstallStorageDir(cleanRoot)
-				if err != nil {
-					return err
-				}
-				storageDirName = resolvedDir
-			} else {
+			if cmd.CalledAs() != "install" {
 				legacyName := core.WorkspaceRootCandidates()[1]
 				if info, err := wsRoot.Lstat(legacyName); err == nil {
 					legacyLink, linkErr := core.IsSymlinkOrReparsePoint(info, filepath.Join(cleanRoot, legacyName))
@@ -1039,6 +1026,9 @@ func newMCPStatusCommand(cwd *string) *cobra.Command {
 }
 
 func writeMCPStatusToolchain(cmd *cobra.Command, format string, output mcpStatusToolchainOutput) error {
+	if cmd == nil || output.Toolchain == nil {
+		return fmt.Errorf("write MCP toolchain status: %w", corerrors.ErrValidation)
+	}
 	if format == "json" {
 		return writeMCPDaemonJSON(cmd, output)
 	}

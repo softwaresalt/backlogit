@@ -978,7 +978,7 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return "", false, mcpDaemonValidationError("parse toolchain.yaml: %v", err)
 	}
-	if err := validateDaemonYAMLKeys(&doc); err != nil {
+	if err := validateDaemonYAMLKeys(&doc, "toolchain.yaml"); err != nil {
 		return "", false, err
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
@@ -1008,6 +1008,11 @@ func resolveToolchainDaemonBinaryRel(root *os.Root, absWorkspace, storageDir str
 	var toolsDirRel string
 	hasToolsDir := hasYAMLMappingKey(&doc, "tools_dir") || manifest.ToolsDir != ""
 	if hasToolsDir {
+		if valNode, ok := findYAMLMappingValueNode(&doc, "tools_dir"); ok {
+			if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
+				return "", false, mcpDaemonValidationError("toolchain.yaml tools_dir must be a string scalar")
+			}
+		}
 		toolsDirRel, err = validateDaemonToolsDirRel(manifest.ToolsDir)
 		if err != nil {
 			return "", false, err
@@ -1161,9 +1166,8 @@ func resolveConfigDaemonBinaryRel(root *os.Root, absWorkspace, storageDir string
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return "", false, mcpDaemonValidationError("parse config.yaml: %v", err)
 	}
-	if err := validateDaemonYAMLKeys(&doc); err != nil {
-		msg := strings.ReplaceAll(err.Error(), "in toolchain.yaml", "in config.yaml")
-		return "", false, fmt.Errorf("%s: %w", msg, corerrors.ErrValidation)
+	if err := validateDaemonYAMLKeys(&doc, "config.yaml"); err != nil {
+		return "", false, err
 	}
 	if valNode, ok := findYAMLMappingValueNode(&doc, "tools_dir"); ok {
 		if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" {
@@ -1210,7 +1214,7 @@ func foldDaemonKey(s string) string {
 	return string(runes)
 }
 
-func validateDaemonYAMLKeys(node *yaml.Node) error {
+func validateDaemonYAMLKeys(node *yaml.Node, fileName string) error {
 	if node == nil {
 		return nil
 	}
@@ -1220,13 +1224,13 @@ func validateDaemonYAMLKeys(node *yaml.Node) error {
 			rawKey := node.Content[i].Value
 			key := foldDaemonKey(rawKey)
 			if seen[key] {
-				return mcpDaemonValidationError("duplicate YAML key %q in toolchain.yaml", rawKey)
+				return mcpDaemonValidationError("duplicate YAML key %q in %s", rawKey, fileName)
 			}
 			seen[key] = true
 		}
 	}
 	for _, child := range node.Content {
-		if err := validateDaemonYAMLKeys(child); err != nil {
+		if err := validateDaemonYAMLKeys(child, fileName); err != nil {
 			return err
 		}
 	}

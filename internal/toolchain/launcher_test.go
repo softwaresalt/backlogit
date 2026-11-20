@@ -535,10 +535,6 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 	}
 
 	t.Run("relative_workspace_root_dot_and_dual_root_override_succeed_from_different_cwd", func(t *testing.T) {
-		pkgDir, wdErr := os.Getwd()
-		require.NoError(t, wdErr)
-		_ = pkgDir
-
 		// Single-root workspace with BACKLOGIT_WORKSPACE_DIR=""
 		singleRoot, otherDir := u9Workspace(t)
 		u9Write(t, singleRoot, ".bin/backlogit.exe", string(binBytes))

@@ -868,6 +868,23 @@ host_prerequisites:
 		gotOutside, err := os.ReadFile(outsideFile)
 		require.NoError(t, err)
 		assert.Equal(t, "untouched\n", string(gotOutside))
+
+		// 6. Mid-replace failure via selfInstallBeforeBinaryReplaceHook closes targetHandle before rollbackAll removes createdDirs.
+		midReplaceRoot := t.TempDir()
+		origBinHook := selfInstallBeforeBinaryReplaceHook
+		t.Cleanup(func() { selfInstallBeforeBinaryReplaceHook = origBinHook })
+		selfInstallBeforeBinaryReplaceHook = func() {
+			entries, readErr := os.ReadDir(filepath.Join(midReplaceRoot, ".tools", "bin"))
+			require.NoError(t, readErr)
+			for _, e := range entries {
+				if strings.Contains(e.Name(), ".tmp.") {
+					require.NoError(t, os.Remove(filepath.Join(midReplaceRoot, ".tools", "bin", e.Name())))
+				}
+			}
+		}
+		_, midErr := installWorkspaceRuntimeExecutable(midReplaceRoot, ".tools/bin")
+		require.Error(t, midErr)
+		assert.NoDirExists(t, filepath.Join(midReplaceRoot, ".tools"))
 	})
 }
 
@@ -898,6 +915,7 @@ func TestU4a_InitBootstrapDefaultsContainmentAndSwapRefusal(t *testing.T) {
 				cwd := root
 				cmd := newInitCommand(&cwd)
 				var outBuf bytes.Buffer
+				cmd.SetIn(strings.NewReader(""))
 				cmd.SetOut(&outBuf)
 				cmd.SetErr(&outBuf)
 				err := cmd.Execute()
@@ -926,6 +944,7 @@ func TestU4a_InitBootstrapDefaultsContainmentAndSwapRefusal(t *testing.T) {
 		cwd := root
 		cmd := newInitCommand(&cwd)
 		var outBuf bytes.Buffer
+		cmd.SetIn(strings.NewReader(""))
 		cmd.SetOut(&outBuf)
 		cmd.SetErr(&outBuf)
 		err := cmd.Execute()
@@ -952,6 +971,7 @@ func TestU4a_InitBootstrapDefaultsContainmentAndSwapRefusal(t *testing.T) {
 			cwd := root
 			cmd := newInitCommand(&cwd)
 			var outBuf bytes.Buffer
+			cmd.SetIn(strings.NewReader(""))
 			cmd.SetOut(&outBuf)
 			cmd.SetErr(&outBuf)
 			err := cmd.Execute()
@@ -991,6 +1011,7 @@ func TestU4a_InitBootstrapDefaultsContainmentAndSwapRefusal(t *testing.T) {
 			cwd := wsDir
 			cmd := newInitCommand(&cwd)
 			var outBuf bytes.Buffer
+			cmd.SetIn(strings.NewReader(""))
 			cmd.SetOut(&outBuf)
 			cmd.SetErr(&outBuf)
 			err := cmd.Execute()
