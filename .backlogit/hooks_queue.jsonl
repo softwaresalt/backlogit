@@ -4907,3 +4907,9 @@
 {"seq":4909,"timestamp":"2026-11-20T02:44:56.8952888Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"218.004-T","schema_version":1}}
 {"seq":4910,"timestamp":"2026-11-20T02:44:57.3859085Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["labels"],"item_id":"218.005-T","schema_version":1}}
 {"seq":4911,"timestamp":"2026-11-20T02:44:57.7992891Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","item_id":"218-F","schema_version":1}}
+{"seq":4912,"timestamp":"2026-11-20T03:25:31.7077806Z","event_type":"create_artifact","payload":{"actor":"backlogit","artifact_type":"task","changed_fields":["id","title","status"],"item_id":"218.008-T","schema_version":1,"status_delta":{"from":"","to":"queued"},"title_delta":{"from":"","to":"Resolve relative manifest workspace_root against target workspace in toolchain provisioning and launcher validation (U2b)"}}}
+{"seq":4913,"timestamp":"2026-11-20T03:29:09.29442Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.006-T","schema_version":1}}
+{"seq":4914,"timestamp":"2026-11-20T03:29:09.5008369Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.008-T","schema_version":1}}
+{"seq":4915,"timestamp":"2026-11-20T03:29:09.8032282Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.003-T","schema_version":1}}
+{"seq":4916,"timestamp":"2026-11-20T03:29:09.9312841Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"feature","item_id":"218-F","schema_version":1}}
+{"seq":4917,"timestamp":"2026-11-20T03:29:10.070863Z","event_type":"update_artifact","payload":{"actor":"backlogit","artifact_type":"task","item_id":"218.002-T","schema_version":1}}
