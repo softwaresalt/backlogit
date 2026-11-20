@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/softwaresalt/backlogit/internal/cli/format"
 	"github.com/softwaresalt/backlogit/internal/config"
@@ -495,16 +497,120 @@ func writeWorkspaceBootstrapDefaults(wsRoot, storageHandle *os.Root, cleanRoot, 
 	return nil
 }
 
+func resolveInitTargetToolsDir(cmd *cobra.Command, cleanRoot, toolsDirFlag string) (string, error) {
+	defaultDir, err := defaultTargetToolsDir(cleanRoot)
+	if err != nil {
+		return "", err
+	}
+
+	validateCandidate := func(raw string) (string, error) {
+		if raw != strings.TrimSpace(raw) || strings.TrimSpace(raw) == "" {
+			return "", fmt.Errorf("target tools directory %q must not be blank or whitespace-padded: %w", raw, corerrors.ErrValidation)
+		}
+		candidate := strings.TrimPrefix(strings.TrimPrefix(raw, "./"), `.\`)
+		cleanRel, valErr := validateTargetToolsDirInput(candidate)
+		if valErr != nil {
+			return "", valErr
+		}
+		if _, wsRoot, openErr := openOrCreateValidatedWorkspaceRoot(cleanRoot, false); openErr == nil {
+			defer func() { _ = wsRoot.Close() }()
+			if dirErr := validateDaemonRelExistingDirs(wsRoot, cleanRoot, cleanRel); dirErr != nil {
+				return "", dirErr
+			}
+		} else if !errors.Is(openErr, os.ErrNotExist) {
+			return "", openErr
+		}
+		return filepath.ToSlash(cleanRel), nil
+	}
+
+	if cmd != nil && cmd.Flags().Changed("tools-dir") {
+		return validateCandidate(toolsDirFlag)
+	}
+
+	if cmd != nil {
+		if jsonrpcEnabled, flagErr := cmd.Flags().GetBool("jsonrpc"); flagErr == nil && jsonrpcEnabled {
+			return defaultDir, nil
+		}
+	}
+
+	var in io.Reader
+	var out io.Writer
+	if cmd != nil {
+		in = cmd.InOrStdin()
+		out = cmd.OutOrStdout()
+	}
+	shouldPrompt := false
+	if in != nil {
+		if inFile, ok := in.(*os.File); ok {
+			isInTerm := term.IsTerminal(int(inFile.Fd()))
+			isOutTerm := false
+			if outFile, outOK := out.(*os.File); outOK {
+				isOutTerm = term.IsTerminal(int(outFile.Fd()))
+			}
+			if isInTerm && isOutTerm {
+				shouldPrompt = true
+			} else if !isInTerm {
+				if fi, statErr := inFile.Stat(); statErr == nil && (fi.Mode()&os.ModeNamedPipe != 0 || (fi.Mode().IsRegular() && fi.Size() > 0)) {
+					shouldPrompt = true
+				}
+			}
+		} else {
+			shouldPrompt = true
+		}
+	}
+	if !shouldPrompt {
+		return defaultDir, nil
+	}
+
+	if _, writeErr := fmt.Fprintf(out, "Target tool install directory [.bin, bin, or custom workspace-relative path] (default: %s): ", defaultDir); writeErr != nil {
+		return "", fmt.Errorf("write target tools directory prompt: %w", writeErr)
+	}
+	reader := bufio.NewReader(in)
+	line, readErr := reader.ReadString('\n')
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return "", fmt.Errorf("read target tools directory prompt: %w", readErr)
+	}
+	trimmed := strings.TrimRight(line, "\r\n")
+	var selected string
+	switch trimmed {
+	case "":
+		selected = defaultDir
+	case "1", ".bin":
+		selected = ".bin"
+	case "2", "bin":
+		selected = "bin"
+	case "3":
+		if _, writeErr := fmt.Fprintf(out, "Enter custom workspace-relative tool directory: "); writeErr != nil {
+			return "", fmt.Errorf("write custom tools directory prompt: %w", writeErr)
+		}
+		line2, readErr2 := reader.ReadString('\n')
+		if readErr2 != nil && !errors.Is(readErr2, io.EOF) {
+			return "", fmt.Errorf("read custom tools directory prompt: %w", readErr2)
+		}
+		trimmed2 := strings.TrimRight(line2, "\r\n")
+		if strings.TrimSpace(trimmed2) == "" {
+			return "", fmt.Errorf("custom target tools directory cannot be empty: %w", corerrors.ErrValidation)
+		}
+		selected = trimmed2
+	default:
+		selected = trimmed
+	}
+	return validateCandidate(selected)
+}
+
 func newInitCommand(cwd *string) *cobra.Command {
-	return &cobra.Command{
+	var toolsDirFlag string
+	cmd := &cobra.Command{
 		Use:     "init [path]",
 		Aliases: []string{"install"},
 		Short:   "Initialize a new backlogit workspace",
 		Long: `Initialize a backlogit workspace in the target directory.
 
 This creates the .backlog storage root, logs directory, canonical stash JSONL
-file, default YAML configuration files, and default artifact templates.`,
+file, default YAML configuration files, default artifact templates, installs the
+backlogit binary into the chosen target tool directory, and configures .mcp.json.`,
 		Example: `  backlogit init
+  backlogit init --tools-dir .bin
   backlogit init D:\Source\MyProject`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := *cwd
@@ -516,6 +622,11 @@ file, default YAML configuration files, and default artifact templates.`,
 				return fmt.Errorf("resolve workspace root: %w", err)
 			}
 			cleanRoot := filepath.Clean(absRoot)
+
+			toolsDirRel, err := resolveInitTargetToolsDir(cmd, cleanRoot, toolsDirFlag)
+			if err != nil {
+				return err
+			}
 
 			validatedRoot, wsRoot, err := openOrCreateValidatedWorkspaceRoot(cleanRoot, true)
 			if err != nil {
@@ -599,7 +710,10 @@ file, default YAML configuration files, and default artifact templates.`,
 			if err != nil {
 				return fmt.Errorf("install workspace runtime executable: %w", err)
 			}
-			if err := ensureWorkspaceRuntimeIgnored(cleanRoot, storageDirName, binName); err != nil {
+			if _, err := installWorkspaceRuntimeExecutable(cleanRoot, toolsDirRel); err != nil {
+				return fmt.Errorf("install workspace tool executable: %w", err)
+			}
+			if err := ensureWorkspaceRuntimeIgnored(cleanRoot, toolsDirRel, binName); err != nil {
 				return fmt.Errorf("configure ignore rules for workspace runtime: %w", err)
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Initialized backlogit workspace at %s\n", dir); err != nil {
@@ -608,6 +722,8 @@ file, default YAML configuration files, and default artifact templates.`,
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&toolsDirFlag, "tools-dir", "", "workspace-relative target tool directory for backlogit binary and .mcp.json (default .bin or bin)")
+	return cmd
 }
 
 func newSyncCommand(cwd *string) *cobra.Command {
