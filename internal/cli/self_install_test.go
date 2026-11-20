@@ -1,7 +1,13 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -235,5 +241,225 @@ func TestU1_TargetToolDirectoryCreationBinaryInstallAndIgnoreEntries(t *testing.
 		_, swapErr := installWorkspaceRuntimeExecutable(swapRoot, ".tools/bin")
 		require.True(t, errors.Is(swapErr, corerrors.ErrValidation) || swapErr != nil, "mid-flight swap must fail closed")
 		assert.NoFileExists(t, filepath.Join(swapOutside, binName))
+	})
+}
+
+func TestU3_DefaultTargetToolsDirAndNonShortCircuitingPreflight(t *testing.T) {
+	binName := "backlogit"
+	if runtime.GOOS == "windows" {
+		binName = "backlogit.exe"
+	}
+	binBytes := []byte("pinned-binary")
+	binSum := sha256.Sum256(binBytes)
+	binSumHex := hex.EncodeToString(binSum[:])
+
+	writeFile := func(t *testing.T, root, rel, body string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(body), 0o644))
+	}
+
+	openRoot := func(t *testing.T, root string) *os.Root {
+		t.Helper()
+		r, err := os.OpenRoot(root)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = r.Close() })
+		return r
+	}
+
+	createDirLink := func(t *testing.T, linkPath, targetPath string) {
+		t.Helper()
+		if runtime.GOOS == "windows" {
+			out, err := exec.Command("cmd", "/c", "mklink", "/J", linkPath, targetPath).CombinedOutput()
+			require.NoError(t, err, "mklink /J failed: %s", out)
+			return
+		}
+		require.NoError(t, os.Symlink(targetPath, linkPath))
+	}
+
+	validToolchainYAML := func(wsRoot string, extraToolYAML string) string {
+		return fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: %q
+tools_dir: ".bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./.bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - %q
+%shost_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, wsRoot, binName, binSumHex, wsRoot, extraToolYAML)
+	}
+
+	t.Run("rejects_line_separators_and_resolves_split_servers_and_empty_workspace_dir_override", func(t *testing.T) {
+		for _, bad := range []string{"tools\n!secret", "tools\r\nother", "tools\x07bell"} {
+			_, err := validateDaemonToolsDirRel(bad)
+			require.ErrorIs(t, err, corerrors.ErrValidation, "validateDaemonToolsDirRel must reject %q", bad)
+		}
+
+		// BACKLOGIT_WORKSPACE_DIR="" must be treated as unset.
+		singleRoot := t.TempDir()
+		writeFile(t, singleRoot, ".backlogit/config.yaml", "tools_dir: \".custom\"\n")
+		wsHandle := openRoot(t, singleRoot)
+
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+		storageDir, hasStorage, err := resolveDaemonStorageDirName(wsHandle, singleRoot)
+		require.NoError(t, err)
+		require.True(t, hasStorage)
+		assert.Equal(t, ".backlogit", storageDir)
+
+		rel, found, err := resolveConfiguredDaemonBinaryRel(wsHandle, singleRoot)
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, filepath.Join(".custom", binName), rel)
+
+		for _, badEnv := range []string{"   ", "invalid"} {
+			t.Setenv("BACKLOGIT_WORKSPACE_DIR", badEnv)
+			_, _, badErr := resolveDaemonStorageDirName(wsHandle, singleRoot)
+			require.ErrorIs(t, badErr, corerrors.ErrValidation)
+		}
+
+		// Dual-root workspace honors explicit BACKLOGIT_WORKSPACE_DIR=".backlog".
+		dualRoot := t.TempDir()
+		writeFile(t, dualRoot, ".backlog/config.yaml", "tools_dir: \".dual-tools\"\n")
+		writeFile(t, dualRoot, ".backlogit/config.yaml", "tools_dir: \".legacy-tools\"\n")
+		dualHandle := openRoot(t, dualRoot)
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", ".backlog")
+		dualStorage, hasDual, dualErr := resolveDaemonStorageDirName(dualHandle, dualRoot)
+		require.NoError(t, dualErr)
+		require.True(t, hasDual)
+		assert.Equal(t, ".backlog", dualStorage)
+
+		// Split mcpServers + servers: single backlogit in servers is found; duplicate across both is rejected.
+		splitRoot := t.TempDir()
+		writeFile(t, splitRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"other":{"type":"stdio","command":"./.bin/other"}},"servers":{"backlogit":{"type":"stdio","command":"./.tools/%s","args":["mcp","--cwd",%q]}}}`, binName, splitRoot))
+		splitHandle := openRoot(t, splitRoot)
+		splitRel, splitFound, splitErr := resolveConfiguredDaemonBinaryRel(splitHandle, splitRoot)
+		require.NoError(t, splitErr)
+		require.True(t, splitFound)
+		assert.Equal(t, filepath.Join(".tools", binName), splitRel)
+
+		dupRoot := t.TempDir()
+		writeFile(t, dupRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s"}},"servers":{"backlog-alt":{"type":"stdio","command":"./bin/%s"}}}`, binName, binName))
+		dupHandle := openRoot(t, dupRoot)
+		_, _, dupErr := resolveConfiguredDaemonBinaryRel(dupHandle, dupRoot)
+		require.ErrorIs(t, dupErr, corerrors.ErrValidation)
+	})
+
+	t.Run("config_yaml_filename_attribution_and_strict_typed_toolchain_preflight", func(t *testing.T) {
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+		pkgDir, wdErr := os.Getwd()
+		require.NoError(t, wdErr)
+
+		// Duplicate key in config.yaml must report config.yaml, not toolchain.yaml.
+		dupCfgRoot := t.TempDir()
+		writeFile(t, dupCfgRoot, ".backlog/config.yaml", "tools_dir: \".bin\"\nTOOLS_DIR: \"bin\"\n")
+		dupCfgHandle := openRoot(t, dupCfgRoot)
+		_, _, dupErr := resolveConfiguredDaemonBinaryRel(dupCfgHandle, dupCfgRoot)
+		require.ErrorIs(t, dupErr, corerrors.ErrValidation)
+		assert.Contains(t, dupErr.Error(), "config.yaml")
+		assert.NotContains(t, dupErr.Error(), "toolchain.yaml")
+
+		// Non-string scalar tools_dir in config.yaml fails closed.
+		nonStrRoot := t.TempDir()
+		writeFile(t, nonStrRoot, ".backlog/config.yaml", "tools_dir: 123\n")
+		nonStrHandle := openRoot(t, nonStrRoot)
+		_, _, nonStrErr := resolveConfiguredDaemonBinaryRel(nonStrHandle, nonStrRoot)
+		require.ErrorIs(t, nonStrErr, corerrors.ErrValidation)
+
+		// Relative workspace_root: "." resolves against absWorkspace even from a different cwd.
+		relWSRoot := t.TempDir()
+		otherCWD := t.TempDir()
+		t.Chdir(otherCWD)
+		writeFile(t, relWSRoot, ".bin/"+binName, string(binBytes))
+		writeFile(t, relWSRoot, ".backlog/toolchain.yaml", validToolchainYAML(".", ""))
+		relWSHandle := openRoot(t, relWSRoot)
+		relBin, relFound, relErr := resolveConfiguredDaemonBinaryRel(relWSHandle, relWSRoot)
+		require.NoError(t, relErr)
+		require.True(t, relFound)
+		assert.Equal(t, filepath.Join(".bin", binName), relBin)
+
+		// Unknown field in toolchain.yaml fails closed.
+		unkRoot := t.TempDir()
+		writeFile(t, unkRoot, ".bin/"+binName, string(binBytes))
+		writeFile(t, unkRoot, ".backlog/toolchain.yaml", validToolchainYAML(".", "")+"unknown_extra: true\n")
+		unkHandle := openRoot(t, unkRoot)
+		_, _, unkErr := resolveConfiguredDaemonBinaryRel(unkHandle, unkRoot)
+		require.ErrorIs(t, unkErr, corerrors.ErrValidation)
+
+		// Unrelated tool SHA-256 mismatch fails closed in preflight.
+		engramMismatch := fmt.Sprintf(`  - id: engram
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./.bin/engram.exe"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args: []
+`, strings.Repeat("0", 64))
+		mismatchRoot := t.TempDir()
+		writeFile(t, mismatchRoot, ".bin/"+binName, string(binBytes))
+		writeFile(t, mismatchRoot, ".bin/engram.exe", "actual-engram-bytes")
+		writeFile(t, mismatchRoot, ".backlog/toolchain.yaml", validToolchainYAML(mismatchRoot, engramMismatch))
+		mismatchHandle := openRoot(t, mismatchRoot)
+		_, _, mismatchErr := resolveConfiguredDaemonBinaryRel(mismatchHandle, mismatchRoot)
+		require.ErrorIs(t, mismatchErr, corerrors.ErrValidation)
+
+		// Verify defaultTargetToolsDir is declared in mcp_daemon.go.
+		daemonAST, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(pkgDir, "mcp_daemon.go"), nil, 0)
+		require.NoError(t, parseErr)
+		hasDefaultHelper := false
+		for _, decl := range daemonAST.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "defaultTargetToolsDir" {
+				hasDefaultHelper = true
+			}
+		}
+		assert.True(t, hasDefaultHelper, "mcp_daemon.go must define defaultTargetToolsDir")
+	})
+
+	t.Run("non_short_circuiting_lower_priority_config_and_directory_validation", func(t *testing.T) {
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+		// Valid .mcp.json must NOT short-circuit invalid toolchain.yaml.
+		badToolchainRoot := t.TempDir()
+		writeFile(t, badToolchainRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`, binName, badToolchainRoot))
+		writeFile(t, badToolchainRoot, ".bin/"+binName, string(binBytes))
+		writeFile(t, badToolchainRoot, ".backlog/toolchain.yaml", validToolchainYAML(badToolchainRoot, "")+"unknown_field: 1\n")
+		_, _, err1 := resolveConfiguredDaemonBinaryRel(openRoot(t, badToolchainRoot), badToolchainRoot)
+		require.ErrorIs(t, err1, corerrors.ErrValidation)
+
+		// Valid .mcp.json must NOT short-circuit invalid config.yaml.
+		badConfigRoot := t.TempDir()
+		writeFile(t, badConfigRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`, binName, badConfigRoot))
+		writeFile(t, badConfigRoot, ".backlog/config.yaml", "tools_dir: \".bin\"\nTOOLS_DIR: \"bin\"\n")
+		_, _, err2 := resolveConfiguredDaemonBinaryRel(openRoot(t, badConfigRoot), badConfigRoot)
+		require.ErrorIs(t, err2, corerrors.ErrValidation)
+
+		// Valid .mcp.json must NOT short-circuit redirected <storage>/templates.
+		badTemplatesRoot := t.TempDir()
+		outside := t.TempDir()
+		writeFile(t, badTemplatesRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`, binName, badTemplatesRoot))
+		require.NoError(t, os.MkdirAll(filepath.Join(badTemplatesRoot, ".backlog"), 0o755))
+		createDirLink(t, filepath.Join(badTemplatesRoot, ".backlog", "templates"), outside)
+		_, _, err3 := resolveConfiguredDaemonBinaryRel(openRoot(t, badTemplatesRoot), badTemplatesRoot)
+		require.ErrorIs(t, err3, corerrors.ErrValidation)
+
+		// Valid .mcp.json must NOT short-circuit regular file or redirected .bin / bin.
+		badBinRoot := t.TempDir()
+		writeFile(t, badBinRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./.bin/%s","args":["mcp","--cwd",%q]}}}`, binName, badBinRoot))
+		writeFile(t, badBinRoot, "bin", "not-a-directory")
+		_, _, err4 := resolveConfiguredDaemonBinaryRel(openRoot(t, badBinRoot), badBinRoot)
+		require.ErrorIs(t, err4, corerrors.ErrValidation)
 	})
 }
