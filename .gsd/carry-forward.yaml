@@ -19,6 +19,3 @@ schema_version: "1.0.0"
 files:
   - .gsd/config.yaml
   - .gsd/carry-forward.yaml
-  - .backlogit/stash.jsonl
-  - .mcp.json
-  - .gitignore
