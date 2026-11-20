@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "shipment_id": "219-S",
+  "feature_id": "218-F",
+  "merge_commit_sha": "7229def0c1308955db257e4eec69d842b93f0256",
+  "phase": "post_close",
+  "invocation": {
+    "surface": "mcp",
+    "tool": "backlogit_ship_shipment",
+    "arguments": {
+      "id": "219-S",
+      "sha": "7229def0c1308955db257e4eec69d842b93f0256",
+      "message": "Merge pull request #665 (219-S / 218-F)",
+      "author": "ship"
+    },
+    "mutation_state": "completed"
+  },
+  "pre_close": {
+    "reconcile_report": ".backlogit/reconcile/219-S-pre-20261120T194000Z.md",
+    "manifest_members": [
+      { "id": "218-F", "artifact_type": "feature", "location": "queue", "declared_status": "active", "classification": "feature-pending-governed-completion" },
+      { "id": "218.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.003-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.006-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.008-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.007-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.004-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" },
+      { "id": "218.005-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "218-F", "classification": "pre-archived" }
+    ],
+    "recommendation": "PROCEED"
+  },
+  "post_close": {
+    "reconcile_reports": [
+      ".backlogit/reconcile/219-S-safe-close-20261120T194600Z.md",
+      ".backlogit/reconcile/219-S-post-20261120T194700Z.md"
+    ],
+    "shipment_status": "shipped",
+    "shipment_record_status": "archived",
+    "shipment_record_archived_status": "shipped",
+    "commit_sha": "7229def0c1308955db257e4eec69d842b93f0256",
+    "returned_ids": [],
+    "archived_ids": [
+      "218.001-T",
+      "218.002-T",
+      "218.003-T",
+      "218.004-T",
+      "218.005-T",
+      "218.006-T",
+      "218.007-T",
+      "218.008-T",
+      "218-F",
+      "219-S"
+    ],
+    "parent_id_preserved": true,
+    "p007_archive_integrity": "PASS",
+    "doctor_shipped_event_findings_for_219_S": 0,
+    "non_member_untouched": true,
+    "postcondition_verdict": "pass",
+    "failures": []
+  }
+}
