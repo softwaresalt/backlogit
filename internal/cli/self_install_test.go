@@ -760,6 +760,44 @@ host_prerequisites: []
 		epAudit, epAuditErr := toolchain.AuditRepositoryToolchain(context.Background(), emptyPrereqRoot)
 		require.NoError(t, epAuditErr)
 		assert.True(t, epAudit.Valid, "%+v", epAudit.Tools)
+
+		// Case 4: Migrating existing launchers to tools_dir with spaces or brackets succeeds.
+		for _, specialDir := range []string{"my tools", "tools[1]"} {
+			specialRoot := t.TempDir()
+			writeFile(t, specialRoot, "bin/"+binName, string(oldBytes))
+			writeFile(t, specialRoot, "start.ps1", launcherPS1("bin"))
+			writeFile(t, specialRoot, "start.sh", launcherSH("bin"))
+			writeFile(t, specialRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/%s","args":["mcp","--cwd",%q]}}}`, binName, specialRoot))
+			writeFile(t, specialRoot, ".backlogit/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites:
+  - id: shell
+    command: shell
+    purpose: bootstrap
+    required: false
+    reason: host shell
+`, binName, oldSumHex))
+			t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+			_, spErr := installWorkspaceRuntimeExecutable(specialRoot, specialDir)
+			require.NoError(t, spErr, "migrating launchers to %q must succeed", specialDir)
+			spAudit, spAuditErr := toolchain.AuditRepositoryToolchain(context.Background(), specialRoot)
+			require.NoError(t, spAuditErr)
+			assert.True(t, spAudit.Valid, "audit for %q: %+v", specialDir, spAudit.Tools)
+			assert.Zero(t, spAudit.Violations)
+		}
 	})
 
 	t.Run("preflight_rejects_unrelated_tool_digest_mismatch_incompatible_lockfile_alias_ref_unmigrated_launcher_or_unknown_fields_with_unchanged_bytes_and_zero_new_files", func(t *testing.T) {

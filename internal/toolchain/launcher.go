@@ -485,13 +485,19 @@ func (p launcherProfile) path(expression string) string {
 			return ""
 		}
 	}
+	quoted := false
 	if strings.Contains(expression, `"`) {
 		if !strings.HasPrefix(expression, `"`) || !strings.HasSuffix(expression, `"`) || strings.Count(expression, `"`) != 2 {
 			return ""
 		}
 		expression = expression[1 : len(expression)-1]
+		quoted = true
 	}
-	variable := regexp.MustCompile(`^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\-]+)?$`)
+	variablePattern := `^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\-]+)?$`
+	if quoted {
+		variablePattern = `^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([/\\][A-Za-z0-9_./\\\[\] -]+)?$`
+	}
+	variable := regexp.MustCompile(variablePattern)
 	parts := variable.FindStringSubmatch(expression)
 	if parts == nil {
 		return ""

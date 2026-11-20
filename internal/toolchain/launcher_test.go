@@ -687,6 +687,27 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 		for _, f := range emptyPrereqFindings {
 			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must allow empty host_prerequisites: %+v", f)
 		}
+		for _, specialDir := range []string{"my tools", "tools[1]"} {
+			specialManifest := newRelManifest(specialDir)
+			specialManifest.WorkspaceRoot = root
+			specialFindings, spErr := VerifyProposedLauncherScripts(root, specialManifest, []byte(launcherPS1(specialDir)), []byte(launcherSH(specialDir)))
+			require.NoError(t, spErr)
+			for _, f := range specialFindings {
+				assert.NotEqual(t, "violation", f.Status, "quoted %s must pass VerifyProposedLauncherScripts: %+v", specialDir, f)
+			}
+			// Unquoted spaces/brackets in start.sh must still be rejected.
+			unquotedSH := fmt.Sprintf("#!/bin/sh\nworkspace_root=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nworkspace_bin_directory=$workspace_root/%s\nbacklogit_path=\"$workspace_bin_directory/backlogit.exe\"\nif [ ! -f \"$backlogit_path\" ]; then echo \"Missing\" >&2; exit 1; fi\nexport COPILOT_HOME=\"$workspace_root/.copilot\"\nexport ENGRAM_DATA_DIR=\"$workspace_root/.engram\"\n\"$backlogit_path\" --cwd \"$workspace_root\" mcp status\n", specialDir)
+			unquotedFindings, uqErr := VerifyProposedLauncherScripts(root, specialManifest, nil, []byte(unquotedSH))
+			require.NoError(t, uqErr)
+			hasViolation := false
+			for _, f := range unquotedFindings {
+				if f.Status == "violation" {
+					hasViolation = true
+					break
+				}
+			}
+			assert.True(t, hasViolation, "unquoted %s in start.sh must be rejected", specialDir)
+		}
 		for _, item := range []struct {
 			name string
 			body string
