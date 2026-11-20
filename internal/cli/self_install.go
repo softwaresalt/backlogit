@@ -739,8 +739,10 @@ func reconcileWorkspaceToolchainYAML(wsRoot *os.Root, absRoot, toolsDirRel, binN
 
 	newToolsSlash := filepath.ToSlash(cleanToolsDir)
 	proposedManifest := manifest
-	proposedManifest.Tools = append([]toolchain.ToolEntry(nil), manifest.Tools...)
-	proposedManifest.HostPrerequisites = append([]toolchain.HostPrerequisiteEntry(nil), manifest.HostPrerequisites...)
+	proposedManifest.Tools = make([]toolchain.ToolEntry, len(manifest.Tools))
+	copy(proposedManifest.Tools, manifest.Tools)
+	proposedManifest.HostPrerequisites = make([]toolchain.HostPrerequisiteEntry, len(manifest.HostPrerequisites))
+	copy(proposedManifest.HostPrerequisites, manifest.HostPrerequisites)
 	proposedManifest.WorkspaceRoot = absRoot
 	if manifest.ToolsDir != "" {
 		proposedManifest.ToolsDir = newToolsSlash

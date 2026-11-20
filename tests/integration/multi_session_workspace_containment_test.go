@@ -778,7 +778,10 @@ func TestU4_InitAndInstallPromptToolsDirAndDaemonStartup(t *testing.T) {
 		}
 
 		// Compiled production binary init --tools-dir and install --tools-dir + PrewarmMCPDaemon.
-		wsInit := t.TempDir()
+		// Use a short os.MkdirTemp("", "u4-") path so Unix domain sockets on Linux stay well within the 100-byte sun_path limit.
+		wsInit, mkErr := os.MkdirTemp("", "u4-")
+		require.NoError(t, mkErr)
+		t.Cleanup(func() { _ = os.RemoveAll(wsInit) })
 		initOut, initErr := exec.CommandContext(t.Context(), prodBin, "init", "--cwd", wsInit, "--tools-dir", ".custom/bin").CombinedOutput()
 		require.NoError(t, initErr, "prod init failed: %s", initOut)
 

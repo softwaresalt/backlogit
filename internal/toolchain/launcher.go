@@ -45,7 +45,7 @@ func VerifyProposedLauncherScripts(rootPath string, m *ToolchainManifest, startP
 		return nil, fmt.Errorf("verify proposed launcher scripts: %w", err)
 	}
 	defer func() { _ = root.Close() }()
-	if err := validateManifestForProvisioning(root, abs, m); err != nil {
+	if err := validateManifestStructure(root, abs, m, false); err != nil {
 		return nil, err
 	}
 	manifestCopy := *m
@@ -143,7 +143,13 @@ func normalizedManifestWorkspaceRoot(m *ToolchainManifest) string {
 }
 
 func isReservedToolsDirSegment(seg string) bool {
-	return strings.EqualFold(seg, ".git") || strings.EqualFold(seg, ".backlog") || strings.EqualFold(seg, ".backlogit")
+	return strings.EqualFold(seg, ".git") ||
+		strings.EqualFold(seg, ".backlog") ||
+		strings.EqualFold(seg, ".backlogit") ||
+		strings.EqualFold(seg, ".gitignore") ||
+		strings.EqualFold(seg, ".mcp.json") ||
+		strings.EqualFold(seg, "start.ps1") ||
+		strings.EqualFold(seg, "start.sh")
 }
 
 func effectiveManifestToolsDir(m *ToolchainManifest) string {
@@ -758,14 +764,18 @@ func wrapProvisioningValidation(msg string, err error) error {
 }
 
 func validateManifestForProvisioning(root *os.Root, abs string, manifest *ToolchainManifest) error {
+	return validateManifestStructure(root, abs, manifest, true)
+}
+
+func validateManifestStructure(root *os.Root, abs string, manifest *ToolchainManifest, requireNonEmpty bool) error {
 	if root == nil || manifest == nil {
 		return fmt.Errorf("validate toolchain manifest: %w", corerrors.ErrValidation)
 	}
 	if manifest.SchemaVersion != "1.0" ||
 		manifest.ContainmentLevel != Level1WorkspaceLocalPinned ||
 		!manifest.OSContainerSandboxDeferred ||
-		len(manifest.Tools) == 0 ||
-		len(manifest.HostPrerequisites) == 0 {
+		manifest.Tools == nil ||
+		(requireNonEmpty && (len(manifest.Tools) == 0 || manifest.HostPrerequisites == nil || len(manifest.HostPrerequisites) == 0)) {
 		return fmt.Errorf("invalid manifest required fields: %w", corerrors.ErrValidation)
 	}
 	if strings.TrimSpace(manifest.WorkspaceRoot) == "" {

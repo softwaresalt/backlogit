@@ -989,7 +989,9 @@ host_prerequisites:
 			t.Cleanup(func() { require.NoError(t, rootHandle.Close()) })
 
 			for _, candidate := range []string{
-				absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt", "tools\x00bin",
+				absToolsDir, ".GIT", ".GIT/sub", ".Backlog", ".BackLogIt",
+				".gitignore", ".gitignore/sub", ".mcp.json", ".mcp.json/sub", "start.ps1", "start.sh",
+				"tools\x00bin",
 				"C:tools", "c:tools", `C:\tools`, "C:/tools", `\\server\share`, "//server/share",
 			} {
 				_, directErr := validManifestToolsDir(rootHandle, badRoot, candidate)
@@ -1256,5 +1258,22 @@ host_prerequisites:
 			_, mcpErr := validateMCPConfigPinning(singleRoot, ".mcp.json", m)
 			require.ErrorIs(t, mcpErr, corerrors.ErrValidation, "validateMCPConfigPinning must reject workspace_root %q", badRoot)
 		}
+	})
+
+	t.Run("relative_workspace_path_without_manifest_synthesizes_absolute_workspace_root", func(t *testing.T) {
+		parent := t.TempDir()
+		proj := filepath.Join(parent, "project")
+		require.NoError(t, os.MkdirAll(filepath.Join(proj, ".backlogit"), 0o755))
+		t.Chdir(parent)
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+
+		loaded, loadErr := LoadToolchainManifest("project")
+		require.NoError(t, loadErr)
+		require.Equal(t, proj, loaded.WorkspaceRoot)
+
+		report, auditErr := AuditRepositoryToolchain(context.Background(), "project")
+		require.NoError(t, auditErr)
+		require.NotNil(t, report)
+		require.Equal(t, proj, report.WorkspaceRoot)
 	})
 }

@@ -203,6 +203,12 @@ func TestU1_TargetToolDirectoryCreationBinaryInstallAndIgnoreEntries(t *testing.
 			"tools\x07bell",
 			"../escape",
 			".git",
+			".gitignore",
+			".gitignore/sub",
+			".mcp.json",
+			".mcp.json/sub",
+			"start.ps1",
+			"start.sh",
 			".",
 			"   ",
 		}
@@ -211,6 +217,19 @@ func TestU1_TargetToolDirectoryCreationBinaryInstallAndIgnoreEntries(t *testing.
 			require.ErrorIs(t, installErr, corerrors.ErrValidation, "install must reject %q", dir)
 			ignoreErr := ensureWorkspaceRuntimeIgnored(root, dir, binName)
 			require.ErrorIs(t, ignoreErr, corerrors.ErrValidation, "ignore must reject %q", dir)
+
+			freshRoot := t.TempDir()
+			initCmd := newInitCommand(&freshRoot)
+			initCmd.SetArgs([]string{"--tools-dir", dir})
+			initCmd.SetIn(strings.NewReader(""))
+			var out bytes.Buffer
+			initCmd.SetOut(&out)
+			initCmd.SetErr(&out)
+			initErr := initCmd.Execute()
+			require.ErrorIs(t, initErr, corerrors.ErrValidation, "init must reject --tools-dir %q", dir)
+			assert.NoDirExists(t, filepath.Join(freshRoot, ".backlog"))
+			assert.NoDirExists(t, filepath.Join(freshRoot, ".gitignore"))
+			assert.NoFileExists(t, filepath.Join(freshRoot, ".mcp.json"))
 		}
 
 		// Redirected ancestor: link/existing/new
@@ -711,6 +730,36 @@ host_prerequisites:
 		require.NoError(t, dualAuditErr)
 		assert.True(t, dualAudit.Valid, "%+v", dualAudit.Tools)
 		assert.Zero(t, dualAudit.Violations)
+
+		// Case 3: Existing manifest with empty host_prerequisites: [] and launchers succeeds.
+		emptyPrereqRoot := t.TempDir()
+		writeFile(t, emptyPrereqRoot, "bin/"+binName, string(oldBytes))
+		writeFile(t, emptyPrereqRoot, "start.ps1", launcherPS1("bin"))
+		writeFile(t, emptyPrereqRoot, "start.sh", launcherSH("bin"))
+		writeFile(t, emptyPrereqRoot, ".mcp.json", fmt.Sprintf(`{"mcpServers":{"backlogit":{"type":"stdio","command":"./bin/%s","args":["mcp","--cwd",%q]}}}`, binName, emptyPrereqRoot))
+		writeFile(t, emptyPrereqRoot, ".backlogit/toolchain.yaml", fmt.Sprintf(`schema_version: "1.0"
+containment_level: level-1-workspace-local-pinned
+os_container_sandbox_deferred: true
+workspace_root: "."
+tools_dir: "bin"
+tools:
+  - id: backlogit
+    kind: mcp
+    containment_class: workspace-local-pinned
+    executable_path: "./bin/%s"
+    pinned_version: "1.0.0"
+    sha256: %q
+    workspace_binding_args:
+      - "--cwd"
+      - "."
+host_prerequisites: []
+`, binName, oldSumHex))
+		t.Setenv("BACKLOGIT_WORKSPACE_DIR", "")
+		_, epErr := installWorkspaceRuntimeExecutable(emptyPrereqRoot, ".tools/bin")
+		require.NoError(t, epErr)
+		epAudit, epAuditErr := toolchain.AuditRepositoryToolchain(context.Background(), emptyPrereqRoot)
+		require.NoError(t, epAuditErr)
+		assert.True(t, epAudit.Valid, "%+v", epAudit.Tools)
 	})
 
 	t.Run("preflight_rejects_unrelated_tool_digest_mismatch_incompatible_lockfile_alias_ref_unmigrated_launcher_or_unknown_fields_with_unchanged_bytes_and_zero_new_files", func(t *testing.T) {

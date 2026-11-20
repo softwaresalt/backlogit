@@ -1416,7 +1416,11 @@ func validateBacklogitCommandRel(absWorkspace, command string) (string, error) {
 }
 
 func isReservedDaemonDirSegment(seg string) bool {
-	if strings.EqualFold(seg, ".git") {
+	if strings.EqualFold(seg, ".git") ||
+		strings.EqualFold(seg, ".gitignore") ||
+		strings.EqualFold(seg, ".mcp.json") ||
+		strings.EqualFold(seg, "start.ps1") ||
+		strings.EqualFold(seg, "start.sh") {
 		return true
 	}
 	for _, candidate := range core.WorkspaceRootCandidates() {

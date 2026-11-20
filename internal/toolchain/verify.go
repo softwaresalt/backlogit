@@ -205,11 +205,11 @@ func loadToolchainManifest(rootPath string) (*ToolchainManifest, error) {
 		}
 	}
 	if storage == "" {
-		return defaultWorkspaceToolchainManifest(rootPath), nil
+		return defaultWorkspaceToolchainManifest(abs), nil
 	}
 	file, err := openLocal(root, abs, filepath.Join(storage, "toolchain.yaml"))
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultWorkspaceToolchainManifest(rootPath), nil
+		return defaultWorkspaceToolchainManifest(abs), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open toolchain manifest: %w", err)
@@ -389,7 +389,7 @@ func isPinnedBacklogitRelPath(rel string) bool {
 		return false
 	}
 	firstSeg, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
-	if samePath(firstSeg, ".git") || samePath(firstSeg, ".backlog") || samePath(firstSeg, ".backlogit") {
+	if isReservedToolsDirSegment(firstSeg) {
 		return false
 	}
 	base := filepath.Base(rel)
@@ -424,7 +424,7 @@ func validManifestToolsDir(root *os.Root, abs, toolsDir string) (string, error) 
 	}
 	slashRel := strings.ReplaceAll(filepath.ToSlash(relDir), "\\", "/")
 	firstSeg, _, _ := strings.Cut(slashRel, "/")
-	if strings.EqualFold(firstSeg, ".git") || strings.EqualFold(firstSeg, ".backlog") || strings.EqualFold(firstSeg, ".backlogit") {
+	if isReservedToolsDirSegment(firstSeg) {
 		return "", fmt.Errorf("reserved tools_dir %q: %w", toolsDir, blerrors.ErrValidation)
 	}
 	if !bindingWithin(root, abs, toolsDir) {

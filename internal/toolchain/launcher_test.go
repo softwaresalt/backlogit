@@ -674,11 +674,18 @@ export ENGRAM_DATA_DIR="$workspace_root/.engram"
 		require.NoError(t, openErr)
 		t.Cleanup(func() { _ = wsHandle.Close() })
 
-		// Pre-install proposed launcher bytes targeting .tools/bin (not yet on disk) pass VerifyProposedLauncherScripts and inspectLauncher with zero violations.
+		// Pre-install proposed launcher bytes targeting .tools/bin (not yet on disk) pass VerifyProposedLauncherScripts and inspectLauncher with zero violations, including when host_prerequisites is empty.
 		proposedFindings, vpErr := VerifyProposedLauncherScripts(root, proposed, []byte(launcherPS1(".tools/bin")), []byte(launcherSH(".tools/bin")))
 		require.NoError(t, vpErr)
 		for _, f := range proposedFindings {
 			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must pass without violation: %+v", f)
+		}
+		emptyPrereq := *proposed
+		emptyPrereq.HostPrerequisites = []HostPrerequisiteEntry{}
+		emptyPrereqFindings, epErr := VerifyProposedLauncherScripts(root, &emptyPrereq, []byte(launcherPS1(".tools/bin")), []byte(launcherSH(".tools/bin")))
+		require.NoError(t, epErr)
+		for _, f := range emptyPrereqFindings {
+			assert.NotEqual(t, "violation", f.Status, "VerifyProposedLauncherScripts must allow empty host_prerequisites: %+v", f)
 		}
 		for _, item := range []struct {
 			name string
