@@ -1,0 +1,21 @@
+# Operator-owned P-011 carry-forward configuration (schema: schemas/carry-forward/1.0.0.schema.json).
+#
+# Paths listed here may be dirty in the working tree when Ship claims a shipment; the
+# P-011 worktree_cleanliness gate then carries them forward instead of blocking.
+#
+# Built in (never listed here): the backlog directory and this file's own path.
+#
+# Edits take effect only once committed: the gate reads the committed HEAD copy of this
+# file, never the working-tree copy. An uncommitted edit is itself carried (self entry)
+# but does not widen the set until it is committed. An invalid or missing committed copy
+# fails closed to the built-ins.
+#
+# Denylist (rejected by the schema and the loader): .gsd/backlog-registry.yaml,
+# .gsd/stage-worktree-marker.yaml and anything under .gsd/gates/. Entries must stay under
+# .gsd/, use only [A-Za-z0-9._-] segments, and contain no globs, dot segments or .git.
+#
+# files: exact paths. directories: prefixes with a trailing slash.
+schema_version: "1.0.0"
+files:
+  - .gsd/config.yaml
+  - .gsd/carry-forward.yaml
