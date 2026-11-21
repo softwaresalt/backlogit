@@ -21,6 +21,7 @@ docline:
     - 219-F
     - 220-S
   topic: 'Reconcile GSD model_routing across .gsd/config.yaml, harness-manifest.yaml, agents, doc-review, and adversarial-review (BE9AD4F1 + A991B4AC / 104-DL)'
+ingested_at: "2026-11-21T00:55:00Z"
 schema_version: "1.0"
 source: docs/decisions/2026-11-20-gsd-model-routing-manifest-reconciliation-deliberation.md
 title: 'Deliberation: GSD Model-Routing and Harness-Manifest Reconciliation (BE9AD4F1, A991B4AC / 104-DL)'
@@ -86,14 +87,14 @@ Stage is forbidden by its Role Boundary (`P-010`) from modifying or staging `.gs
 * **Effort estimate**: Low (initial), High (breakage).
 * **Fit**: Unacceptable.
 
-### Option B: Co-Scheduled Single-Wave Decomposition (11 Two-File `docs-only` Tasks + 1 Two-File `harness-ready` Manifest/Contract Task) - Selected
+### Option B: Co-Scheduled Single-Wave Decomposition (11 Two-File `docs-only` Tasks + 1 Three-File `harness-ready` Config/Manifest/Contract Task) - Selected
 
 * **Description**:
-  1. Ship commits carried-forward `.gsd/config.yaml` on the `220-S` shipment branch via `P-011` pre-claim carry-forward.
-  2. Partition the 22 `.github/**` Markdown files into **11 width-isolated, 2-file `P-002.1` `docs-only` tasks (`219.001-T`..`219.011-T`)**, each updating only model-routing frontmatter and model-routing prose while preserving all workspace-specific `tools:`, role-boundary rules, and headings, gated by a non-vacuous content + `go run ./cmd/backlogit docs lint` `exempt_verification_command`.
-  3. Co-schedule **`219.012-T` (`U12`, `harness-ready`, 2 files: `.gsd/harness-manifest.yaml` and `tests/integration/gsd_model_routing_reconciliation_test.go`)** last in **Wave 1** manifest order (mirroring the `214-F` / `215-S` co-scheduling precedent). `harness-architect` scaffolds `TestU12_GSDModelRoutingManifestReconciliation` RED at Wave 1 entry; `219.001-T`..`219.011-T` land the 22 `.github/**` updates; `219.012-T` reconciles `.gsd/harness-manifest.yaml` (`config_hash`, `variables_used`, `tuned_at`, and all 17 touched manifest `checksum`s while preserving every `drift_allowed`/`drift_reason`/historical note); and Wave 1 Step 4.6 passes `TestU12_HarnessManifestNamespaceReconciliation`, `TestUSR6`, `TestUCXS17`, `TestU19R3`, `TestWorkspaceAgentsGrantFullBacklogitToolSurface`, and `gsd verify-workspace` in one clean convergence pass.
-* **Pros**: Strictly satisfies `< 3 files` per task (`2` files on all 12 tasks), `12 < 20` session task budget, P-002.1/P-002.3/P-002.4/P-004 (`redhonesty`), and Wave 1 Step 4.6 convergence.
-* **Cons**: Requires explicit Wave 1 manifest ordering (`219.001-T`..`219.011-T` before `219.012-T`), which `backlogit_create_shipment` / `backlogit_add_to_shipment` guarantees deterministically.
+  1. Make `220-S` reproducible on any checkout (dirty worktree carry-forward or clean `main`): document the exact target `.gsd/config.yaml` `model_routing` YAML block verbatim in the implementation plan and in `219.012-T` (`U12`), and include `.gsd/config.yaml` in `219.012-T`'s `## File Budget` (`3` files: `.gsd/config.yaml`, `.gsd/harness-manifest.yaml`, `tests/integration/gsd_model_routing_reconciliation_test.go`). If `.gsd/config.yaml` is carried forward onto the `220-S` shipment branch via `P-011` pre-claim carry-forward, `219.012-T` verifies/commits those exact `model_routing` values alongside `.gsd/harness-manifest.yaml`; on a clean `main` checkout without dirty `.gsd/config.yaml`, `219.012-T` applies and commits that exact `model_routing` block directly.
+  2. Partition the 22 `.github/**` Markdown files into **11 width-isolated, 2-file `P-002.1` `docs-only` tasks (`219.001-T`..`219.011-T`, `priority: high`)**, each updating only model-routing frontmatter and model-routing prose while preserving all workspace-specific `tools:`, role-boundary rules, and headings, gated by a non-vacuous content + `go run ./cmd/backlogit docs lint` `exempt_verification_command`.
+  3. Co-schedule **`219.012-T` (`U12`, `priority: medium`, `test-first`, 3 files: `.gsd/config.yaml`, `.gsd/harness-manifest.yaml`, and `tests/integration/gsd_model_routing_reconciliation_test.go`)** last (12th) in **Wave 1** via both priority/ID queue ordering and shipment manifest order (mirroring the `214-F` / `215-S` co-scheduling precedent). `harness-architect` scaffolds `TestU12_GSDModelRoutingManifestReconciliation` RED at Wave 1 entry; `219.001-T`..`219.011-T` land the 22 `.github/**` updates; `219.012-T` verifies/applies `.gsd/config.yaml` `model_routing` and reconciles `.gsd/harness-manifest.yaml` (`config_hash`, `variables_used`, `tuned_at`, and all 17 touched manifest `checksum`s while preserving every `drift_allowed`/`drift_reason`/historical note); and Wave 1 Step 4.6 passes `TestU12_HarnessManifestNamespaceReconciliation`, `TestUSR6`, `TestUCXS17`, `TestU19R3`, `TestWorkspaceAgentsGrantFullBacklogitToolSurface`, and `gsd verify-workspace` in one clean convergence pass.
+* **Pros**: Satisfies the 2-hour rule (`<= 3 files` per task: `2` files on `U1`–`U11`, `3` files on `U12`), `12 < 20` session task budget, deterministic Wave 1 priority + manifest ordering, checkout-independent reproducibility, P-002.1/P-002.3/P-002.4/P-004 (`redhonesty`), and Wave 1 Step 4.6 convergence.
+* **Cons**: Requires explicit Wave 1 priority + manifest ordering (`219.001-T`..`219.011-T` at `priority: high` before `219.012-T` at `priority: medium`), enforced deterministically in both backlog queue and `220-S` manifest.
 * **Effort estimate**: Medium.
 * **Fit**: Exact match.
 
@@ -109,13 +110,15 @@ Stage is forbidden by its Role Boundary (`P-010`) from modifying or staging `.gs
 | Criterion | Option A (Blind Re-Render) | Option B (Co-Scheduled Wave 1) | Option C (2-Wave Split) |
 | --- | --- | --- | --- |
 | Preserves workspace `tools:` & drift records | Fail | Pass | Pass |
-| `< 3 files` per task (Constitution Granularity) | N/A | Pass (`2` files x 12 tasks) | Pass |
+| `<= 3 files` per task (2-hour rule) | N/A | Pass (`2` files x 11 + `3` files x 1) | Pass |
 | Wave 1 Step 4.6 `TestU12` convergence | Fail | Pass | Fail (`config_hash` stale at Wave 1 end) |
 | P-002.1 / P-004 `redhonesty` compliance | Fail | Pass | Pass |
 
 ## Decision
 
-Adopt **Option B**. Harvest `BE9AD4F1` and `A991B4AC` together into covering Feature **`219-F`** and Shipment **`220-S`** (carrying label `dag-root` so `gsd gate pipeline-topology --mode agent --shipment 220-S --phase pre_claim --json` passes with `predecessor_provenance: declared_root`). Update the explanatory cross-provider comment in `.gsd/config.yaml` only if needed? **No** — `.gsd/config.yaml` is carried forward as-is by Ship under `P-011` so operator config bytes remain exact.
+Adopt **Option B**. Harvest `BE9AD4F1` and `A991B4AC` together into covering Feature **`219-F`** and Shipment **`220-S`** (carrying label `dag-root` so `gsd gate pipeline-topology --mode agent --shipment 220-S --phase pre_claim --json` passes with `predecessor_provenance: declared_root`). Include `.gsd/config.yaml` explicitly in `219.012-T` (`U12`)'s 3-file budget with the exact target `model_routing` YAML block documented verbatim so `220-S` is reproducible on both `P-011` carry-forward worktrees and clean `main` checkouts without Stage touching `.gsd/config.yaml`.
+
+**Governed Transitional Formatting Gate (`079-DL` / `104-DL` across `220-S`, `221-S`, and `222-S` Waves 1–4)**: Deliberations `079-DL`, `104-DL`, `105-DL`, and `106-DL` explicitly extend `079-DL`'s governed scoped repository Go source-tree formatting gate — `gofmt -l cmd internal tests scripts` (covering `gofmt -l cmd internal tests` plus `scripts`, i.e., 100% of repository Go source directories, while excluding gitignored/local `.copilot/`, `.bin/`, `bin/`, `.engram/`, `.kbdb/`, and `logs/` caches and **strictly forbidding unscoped `gofmt -l .` and unscoped `gofmt -w .`**), paired with branch-diff `.go` `gofmt` + LF-only (`0` `\r`) + `git diff --check` verification — across **all of `220-S`, `221-S`, and `222-S` Waves 1–4** until `222-S` Wave 4 (`221.003-T`..`221.008-T` and `221.010-T`) updates the repository's canonical format-gate text (`AGENTS.md`, `.github/**`, `.gsd/harness-manifest.yaml`) on `main`.
 
 ## Rejected Alternatives
 

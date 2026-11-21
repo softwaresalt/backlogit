@@ -2,6 +2,7 @@
 chunk_strategy: h1-h2-h3
 description: 'Implementation plan for Group 1A (BE9AD4F1 + A991B4AC / 104-DL -> 219-F / 220-S): reconcile carried-forward .gsd/config.yaml model_routing with .gsd/harness-manifest.yaml, 20 tiered .github/agents/** definitions, .github/skills/doc-review/SKILL.md, and .github/instructions/adversarial-review.instructions.md.'
 doc_type: plan
+ingested_at: "2026-11-21T00:55:00Z"
 schema_version: "1.0"
 source: docs/plans/2026-11-20-gsd-model-routing-manifest-reconciliation-plan.md
 title: 'Plan: GSD Model-Routing and Harness-Manifest Reconciliation (219-F / 220-S)'
@@ -32,7 +33,7 @@ Uncommitted operator `model_routing` edits in `.gsd/config.yaml` will be carried
 | R4: Update Tier 2 reviewers `security-lens-reviewer.agent.md` and `security-reviewer.agent.md` (`mai-code-2`/`microsoft`/`high`/`long_context`) | `BE9AD4F1` / `104-DL` | Unit U4 (`219.004-T`, Wave 1) | P-002.3 `EXEMPT_VERIFY_OK:219.004-T` |
 | R5: Update Tier 3 sentinels `review/security-sentinel.agent.md` and `subagents/security-sentinel.agent.md` (`gemini-4-carbon`/`google`/`high`/`long_context`) | `BE9AD4F1` / `104-DL` | Unit U5 (`219.005-T`, Wave 1) | P-002.3 `EXEMPT_VERIFY_OK:219.005-T` |
 | R6–R11: Update all 12 Tier 1 subagents and reviewers (`claude-haiku-5.5`/`anthropic`/`high`/`long_context`) in six 2-file units | `BE9AD4F1` / `104-DL` | Units U6–U11 (`219.006-T`..`219.011-T`, Wave 1) | P-002.3 `EXEMPT_VERIFY_OK:219.006-T`..`219.011-T` |
-| R12: Reconcile `.gsd/harness-manifest.yaml` (`config_hash`, `variables_used`, `tuned_at`, and 17 LF-normalized SHA-256 `checksum`s while preserving all `drift_allowed`/`drift_reason`/historical notes) and enforce full cross-surface parity in `tests/integration/gsd_model_routing_reconciliation_test.go` | `BE9AD4F1`, `A991B4AC` / `104-DL` | Unit U12 (`219.012-T`, Wave 1 — last in manifest order) | `TestU12_GSDModelRoutingManifestReconciliation`, `TestU12_HarnessManifestNamespaceReconciliation`, `TestUSR6_HarnessManifestDriftRecords`, `gsd verify-workspace --workspace . --json` |
+| R12: Ensure `.gsd/config.yaml` contains the exact target `model_routing` block (via `P-011` carry-forward verification/commit or direct write on clean `main`), reconcile `.gsd/harness-manifest.yaml` (`config_hash`, `variables_used`, `tuned_at`, and 17 LF-normalized SHA-256 `checksum`s while preserving all `drift_allowed`/`drift_reason`/historical notes), and enforce full cross-surface parity in `tests/integration/gsd_model_routing_reconciliation_test.go` | `BE9AD4F1`, `A991B4AC` / `104-DL` | Unit U12 (`219.012-T`, Wave 1 — last in priority + manifest order) | `TestU12_GSDModelRoutingManifestReconciliation`, `TestU12_HarnessManifestNamespaceReconciliation`, `TestUSR6_HarnessManifestDriftRecords`, `gsd verify-workspace --workspace . --json` |
 
 ## Closed P-002.1 Harness-Exempt Set
 
@@ -118,15 +119,81 @@ Each unit is `Domain: docs` (`P-002.1` `docs-only`; 2 files, 0 Go files, `Size: 
 
 Each unit's `exempt_verification_command` asserts both target files contain `reasoning_effort: "high"` and `context_tier: "long_context"` and contain neither `reasoning_effort: "xhigh"` nor `context_tier: "default"`, runs `go run ./cmd/backlogit docs lint --format json`, and prints its task-unique `EXEMPT_VERIFY_OK:<task_id>` marker.
 
-### Unit U12: Reconcile `.gsd/harness-manifest.yaml` and enforce model-routing contract parity (`219.012-T`, Wave 1 — last in manifest order)
+### Unit U12: Ensure `.gsd/config.yaml` target `model_routing`, reconcile `.gsd/harness-manifest.yaml`, and enforce contract parity (`219.012-T`, Wave 1 — last in priority + manifest order)
 
-* **Domain**: `config` / `tests` (`harness-ready`, `test-first`; 2 files, 1 test function, 3 test scenarios)
-* **Size / Complexity**: `M` / `medium`
-* **Execution posture**: `test-first` (`P-002.1` compile PASS + runtime assertion RED at Wave 1 entry before `.gsd/harness-manifest.yaml` is edited; executed 12th in Wave 1 manifest order after `219.001-T`..`219.011-T` land all 22 `.github/**` file edits)
-* **Affected files (2)**:
+* **Domain**: `config` / `tests` (`test-first`; 3 files, 1 test function, 3 test scenarios — within the 2-hour rule's `<= 3 files` limit)
+* **Size / Complexity / Priority**: `M` / `medium` / `priority: medium` (paired with uniform `priority: high` on `219.001-T`..`219.011-T` so both priority/ID queue ordering and `220-S` manifest ordering deterministically run `219.012-T` 12th in Wave 1)
+* **Execution posture**: `test-first` (`P-002.1` compile PASS + runtime assertion RED at Wave 1 entry before `.gsd/harness-manifest.yaml` — and `.gsd/config.yaml` on clean `main` — is reconciled; executed 12th in Wave 1 after `219.001-T`..`219.011-T` land all 22 `.github/**` file edits)
+* **Affected files (`## File Budget`: 3)**:
+  * `.gsd/config.yaml`
   * `.gsd/harness-manifest.yaml`
   * `tests/integration/gsd_model_routing_reconciliation_test.go`
+* **Exact target `.gsd/config.yaml` `model_routing` block (checkout-independent source of truth)**:
+
+```yaml
+model_routing:
+  tier1:
+    model: claude-haiku-5.5              # Fast/cheap: memory, docs, compaction (e.g., gpt-5.4-mini)
+    model_provider: "anthropic"       # e.g., openai, anthropic — leave empty for default
+    model_family: "claude-haiku-5.5"           # Resolved into Tier 1 agent frontmatter
+    reasoning_effort: "high"  # Leave empty to use model default
+    context_tier: "long_context"        # context-capacity class (default | long_context)
+  tier2:
+    model: mai-code-2              # Standard: orchestration, code, review (e.g., claude-sonnet-5)
+    reasoning_effort: "high"
+    model_provider: "microsoft"
+    model_family: "mai-code-2"
+    context_tier: "long_context"     # default | long_context
+  tier3:
+    model: gemini-4-carbon              # Frontier: planning, architecture, analysis (e.g., claude-sonnet-5)
+    reasoning_effort: "high"
+    model_provider: "google"
+    model_family: "gemini-4-carbon"
+    context_tier: "long_context"
+  orchestrator:
+    model_provider: "google"
+    model_family: "gemini-4-carbon"
+    reasoning_effort: "medium"
+    context_tier: "long_context"
+  stage:
+    model_provider: "google"
+    model_family: "gemini-4-carbon"             # Stage role route (falls back to tier3 when empty)
+    reasoning_effort: "medium"
+    context_tier: "long_context"
+    escalation:
+      model_provider: "openai"
+      model_family: "gpt-6.2-sol"
+      reasoning_effort: "high"
+      context_tier: "long_context"
+  ship:
+    model_family: "gemini-4-hydrogen"
+    model_provider: "google"
+    reasoning_effort: "high"
+    context_tier: "long_context"
+    escalation:
+      model_family: "gpt-6.2-sol"
+      model_provider: "openai"
+      reasoning_effort: "medium"
+      context_tier: "long_context"
+  anchor_review:
+    model_provider: "openai"
+    model_family: "gpt-6.2-sol"
+    reasoning_effort: "high"
+
+  alt_doc_review:
+    # Alternate route for the doc-review skill's review pass. Deliberately a
+    # third provider (tiers are mostly Anthropic — tier1 is OpenAI — and
+    # escalation/anchor are OpenAI) for
+    # cross-model diversity. Schema allows only these two keys (no
+    # reasoning_effort). Clearing either field falls back to Tier 2.
+    model_provider: "google"
+    model_family: "gemini-4-hydrogen"
+```
+
 * **Changes needed**:
+  0. In `.gsd/config.yaml` (reproducible on **any** checkout):
+     * If `.gsd/config.yaml` was already carried forward onto the `220-S` branch under `P-011`, verify that its `model_routing` values match the exact block above and commit `.gsd/config.yaml` (if still unstaged) alongside `.gsd/harness-manifest.yaml`.
+     * If `220-S` is executed on a clean `main` checkout where `.gsd/config.yaml` has not yet been updated, update `.gsd/config.yaml`'s `model_routing` section to the exact block above (BOM-free UTF-8, LF `\n` line endings, preserving all non-`model_routing` sections) and commit it alongside `.gsd/harness-manifest.yaml`.
   1. In `.gsd/harness-manifest.yaml` (written with LF `\n` line endings and zero duplicate YAML keys):
      * Confirm as an implementer step-ordering precondition (never inside the durable Go test) that `219.001-T`..`219.011-T` are `done`, update `config_hash` to match the LF-normalized SHA-256 of `.gsd/config.yaml`, and update `tuned_at` to a valid RFC3339 UTC timestamp.
      * Update `variables_used`:
@@ -150,23 +217,24 @@ Each unit's `exempt_verification_command` asserts both target files contain `rea
 
 ## Dependency Graph
 
-All 12 tasks (`219.001-T`..`219.012-T`) have zero inter-task `blocks` edges so they co-schedule in **Wave 1 (`ready_1`)**, ordered in `220-S`'s manifest as `219.001-T`..`219.011-T` followed by `219.012-T`:
+All 12 tasks (`219.001-T`..`219.012-T`) have zero inter-task `blocks` edges so they co-schedule in **Wave 1 (`ready_1`)**. Uniform `priority: high` on `219.001-T`..`219.011-T` and `priority: medium` on `219.012-T` align priority/ID queue ordering with `220-S`'s manifest order (`219.001-T`..`219.011-T` followed 12th by `219.012-T`):
 
 ```text
-Wave 1 (ready_1, manifest execution order):
-  219.001-T (U1) -> 219.002-T (U2) -> ... -> 219.011-T (U11) -> 219.012-T (U12: .gsd/harness-manifest.yaml + contract test)
+Wave 1 (ready_1, priority + manifest execution order):
+  219.001-T..219.011-T (U1..U11, priority: high) -> 219.012-T (U12, priority: medium: .gsd/config.yaml + .gsd/harness-manifest.yaml + contract test)
   --> Wave 1 Step 4.6 Convergence: TestU12 + TestUSR6 + TestUCXS17 + TestU19R3 + gsd verify-workspace PASS
 ```
 
 ## Decisions and Rationale
 
-* **Single-wave co-scheduling (`U1`–`U12` in Wave 1)**: Because Ship commits carried-forward `.gsd/config.yaml` at `P-011` pre-claim before Wave 1 begins, `TestU12_HarnessManifestNamespaceReconciliation` requires `.gsd/harness-manifest.yaml` `config_hash` to be updated before Wave 1 Step 4.6 runs `go test -timeout=30m ./...`. Co-scheduling `U1`–`U11` (`docs-only`) ahead of `U12` (`harness-ready`) in Wave 1 manifest order follows the proven `214-F` (`215-S`) precedent.
-* **Strict 2-file task width**: Splitting the 22 `.github/**` files into 11 two-file `docs-only` tasks plus 1 two-file `harness-ready` manifest/test task keeps every task strictly `< 3 files` while staying well within the 20-task session ceiling (`12 < 20`).
+* **Single-wave co-scheduling (`U1`–`U12` in Wave 1) with aligned priorities**: Whether `.gsd/config.yaml` arrives via `P-011` pre-claim carry-forward or is applied directly in `U12` on a clean `main` checkout, `TestU12_HarnessManifestNamespaceReconciliation` requires `.gsd/harness-manifest.yaml` `config_hash` to match `.gsd/config.yaml` before Wave 1 Step 4.6 runs `go test -timeout=30m ./...`. Setting `priority: high` on `U1`–`U11` (`docs-only`) and `priority: medium` on `U12` (`test-first`) alongside explicit `220-S` manifest ordering guarantees `U12` runs 12th in Wave 1 under both ordering rules.
+* **Bounded task width (`<= 3 files`)**: Splitting the 22 `.github/**` files into 11 two-file `docs-only` tasks plus 1 three-file `test-first` config/manifest/test task keeps every task within the 2-hour rule (`<= 3 files`) and well within the 20-task session ceiling (`12 < 20`).
 
 ## Risks and Caveats
 
-* **Windows CRLF and UTF-8 BOM hazard**: `.gsd/harness-manifest.yaml` and `.github/**` files must be written as BOM-free UTF-8 (`[System.Text.UTF8Encoding]::new($false)`, never Windows PowerShell `Set-Content -Encoding utf8`) with LF (`\n`) endings so `gsd gate line-endings --json` and LF-normalized SHA-256 checksums agree on disk and in Git.
-* **Foreign worktree paths & baseline refresh**: Never stage, commit, or list `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, or `.kbdb/` in any task `## File Budget`; after committing `.gsd/config.yaml` via `P-011` carry-forward on the `220-S` branch, refresh `.gsd/worktree-baseline.json` on disk via `gsd gate pipeline-topology --mode agent --shipment 220-S --phase lifecycle --capture-baseline --json` per `/gsd-dark-mode` Step 3. If `.copilot/session-state/` Go caches exist on the host before `222-S` lands, `079-DL`'s bounded `gofmt -l cmd internal tests scripts` + diff check applies.
+* **Windows CRLF and UTF-8 BOM hazard**: `.gsd/config.yaml`, `.gsd/harness-manifest.yaml`, and `.github/**` files must be written as BOM-free UTF-8 (`[System.Text.UTF8Encoding]::new($false)`, never Windows PowerShell `Set-Content -Encoding utf8`) with LF (`\n`) endings so `gsd gate line-endings --json` and LF-normalized SHA-256 checksums agree on disk and in Git.
+* **Foreign worktree paths & baseline refresh**: Never stage, commit, or list `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, or `.kbdb/` in any task `## File Budget`; after committing `.gsd/config.yaml` on the `220-S` branch (at `P-011` pre-claim or in `219.012-T`), refresh `.gsd/worktree-baseline.json` on disk via `gsd gate pipeline-topology --mode agent --shipment 220-S --phase lifecycle --capture-baseline --json` per `/gsd-dark-mode` Step 3.
+* **Governed transitional formatting gate (`079-DL` / `104-DL` across `220-S`, `221-S`, and `222-S` Waves 1–4)**: Deliberations `079-DL`, `104-DL`, `105-DL`, and `106-DL` explicitly extend `079-DL`'s governed scoped repository Go source-tree formatting gate (`gofmt -l cmd internal tests scripts`, covering `gofmt -l cmd internal tests` plus `scripts` while excluding gitignored/local `.copilot/`, `.bin/`, `bin/`, `.engram/`, `.kbdb/`, and `logs/` caches, **forbidding unscoped `gofmt -l .` and unscoped `gofmt -w .`**, and paired with branch-diff `.go` `gofmt` + LF-only `0 \r` + `git diff --check` verification) across **`220-S`, `221-S`, and `222-S` Waves 1–4** until `222-S` Wave 4 (`221.003-T`..`221.008-T` + `221.010-T`) updates the repository's canonical format-gate text on `main`.
 
 ## Constitution Check
 
@@ -175,7 +243,7 @@ Wave 1 (ready_1, manifest execution order):
 * **III. Workspace Isolation and Security Boundaries**: `pass` — All reads/writes stay within workspace `.gsd/`, `.github/`, and `tests/integration/`, with zero secrets committed.
 * **IV. CLI Workspace Containment (NON-NEGOTIABLE)**: `pass` — Zero operations escape the repository working tree.
 * **V. Structured Observability**: `pass` — Every task emits named `--- PASS:` or `EXEMPT_VERIFY_OK:<task_id>` output and `gsd verify-workspace --workspace . --json` evidence.
-* **VI. Single Responsibility**: `pass` — Zero new dependencies introduced; every task is strictly 2 files in a single domain.
+* **VI. Single Responsibility**: `pass` — Zero new dependencies introduced; `U1`–`U11` touch `2` files each and `U12` touches `3` files (`<= 3 files`).
 * **VII. Destructive Command Approval (NON-NEGOTIABLE)**: `pass` — All `exempt_verification_command` probes are strictly read-only (`Get-Content` + `go run ./cmd/backlogit docs lint`).
 * **VIII. Explicit Safety Modes**: `pass` — Careful preservation of workspace-specific `drift_reason` and `tools:` contracts enforced by automated guards.
 * **IX. Git-Friendly Persistence**: `pass` — LF-normalized Markdown and YAML edits with unique mapping keys.
@@ -207,7 +275,7 @@ Requires plan hardening: yes
 
 * **Hardening required**: Yes — P-006 triggered by cross-agent routing contract updates, `P-011` `.gsd/config.yaml` carry-forward coupling, and `.gsd/harness-manifest.yaml` checksum/drift-record invariants.
 * **Protected invariants**:
-  * **I1 (`P-011` carry-forward, foreign-path exclusion, and baseline refresh)**: Ship commits carried-forward `.gsd/config.yaml` via literal pathspec on the `220-S` branch before Wave 1 claim, refreshes `.gsd/worktree-baseline.json` on disk via `--capture-baseline` per `/gsd-dark-mode` Step 3, and NEVER stages, commits, or lists `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, or `.kbdb/` in any task `## File Budget`.
+  * **I1 (Checkout-independent `.gsd/config.yaml` ownership, `P-011` carry-forward, foreign-path exclusion, and baseline refresh)**: `.gsd/config.yaml` is explicitly owned in `219.012-T` (`U12`)'s 3-file budget with its exact target `model_routing` block documented verbatim above. If `.gsd/config.yaml` is carried forward onto the `220-S` branch under `P-011`, `219.012-T` verifies/commits those exact `model_routing` values alongside `.gsd/harness-manifest.yaml`; on a clean `main` checkout, `219.012-T` writes and commits that exact `model_routing` block directly. Ship refreshes `.gsd/worktree-baseline.json` on disk via `--capture-baseline` per `/gsd-dark-mode` Step 3 and NEVER stages, commits, or lists `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, or `.kbdb/` in any task `## File Budget`.
   * **I2 (Preservation of workspace `tools:` wildcards & agent governance prose)**: Units `U1`–`U11` edit ONLY the declared frontmatter routing keys (`model_family`, `model_provider`, `reasoning_effort`, `context_tier`, `anchor_review_family`) and model-routing prose sections (`_orchestrator.agent.md` `Model Routing`, `adversarial-review` routing prose, `doc-review` `Alternate Model Support`), leaving `tools:` (`backlogit/*`), role boundaries, served-root attestation, and recovery protocols byte-identical.
   * **I3 (Preservation of `drift_allowed`, `drift_reason`, and historical notes in `.gsd/harness-manifest.yaml`)**: Unit `U12` updates `config_hash`, `tuned_at`, `variables_used` routing keys, and the 17 modified `.github/**` `checksum` values over LF-normalized bytes without adding duplicate YAML keys or altering any `drift_allowed: true`, `drift_reason` (`"Do not auto-revert."`, `227A2930`, `B83081F5`, `75E02C17`..`F05661B1`, `073-DL rev22`), or historical `note` (`"DOCS_PLANS corrected to docs/exec-plans per workspace config."`).
   * **I4 (Wave 1 co-scheduling order)**: All 12 tasks (`219.001-T`..`219.012-T`) execute in Wave 1 in exact manifest order (`219.001-T`..`219.011-T` before `219.012-T`) so `TestU12_HarnessManifestNamespaceReconciliation` and `TestU12_GSDModelRoutingManifestReconciliation` converge green at Wave 1 Step 4.6.

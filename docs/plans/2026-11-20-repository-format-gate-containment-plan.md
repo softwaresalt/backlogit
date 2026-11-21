@@ -2,6 +2,7 @@
 chunk_strategy: h1-h2-h3
 description: 'Implementation plan for Group 1B Part 2 (DF533572 / 079-DL -> 221-F / 222-S): scope repository formatting gates to Go source directories (cmd, internal, tests, scripts) to prevent .copilot session-cache and logs/ traversal while reconciling .gsd/workspace-profile.yaml and .gsd/harness-manifest.yaml.'
 doc_type: plan
+ingested_at: "2026-11-21T00:55:00Z"
 schema_version: "1.0"
 source: docs/plans/2026-11-20-repository-format-gate-containment-plan.md
 title: 'Plan: Repository Formatting-Gate Source-Tree Scoping and Session-Cache Containment (221-F / 222-S)'
@@ -128,6 +129,7 @@ All six `docs-only` tasks depend on `221.009-T` (`U9`) so they co-schedule in **
 
 * **Preserving `073-DL` governed budget anchors**: Edits to `AGENTS.md`, `.github/copilot-instructions.md`, `constitution.instructions.md`, `go.instructions.md`, `workflow-policies.md`, `copilot-code-review.instructions.md`, `workspace-profile.yaml`, and `harness-manifest.yaml` must touch only `gofmt`/`goimports` lines and keep `go test -timeout=30m ./...` lines untouched so all 6 `TestGovernedFullSuiteBudget_*` suites stay green.
 * **Literal-pathspec staging & foreign worktree paths**: Because `U9` and `U10` modify `.gsd/workspace-profile.yaml` and `.gsd/harness-manifest.yaml`, use explicit literal pathspecs (never directory-wide `git add .gsd/`) and never stage, commit, or list `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, `.gsd/config.yaml`, or `.kbdb/` in any task `## File Budget`. Write all modified YAML/Markdown files as BOM-free UTF-8 with LF (`\n`) line endings.
+* **Governed transitional formatting gate across `222-S` Waves 1–4 (`079-DL`)**: While `222-S` Waves 1–3 (`221.001-T`, `221.002-T`, `221.009-T`) execute before Wave 4 (`221.003-T`..`221.008-T`, `221.010-T`) updates `AGENTS.md`, `.github/**`, and `.gsd/harness-manifest.yaml`, `079-DL` (together with `104-DL`, `105-DL`, and `106-DL`) explicitly governs Waves 1–4 with the scoped `gofmt -l cmd internal tests scripts` gate (covering `gofmt -l cmd internal tests` plus `scripts`, excluding gitignored/local `.copilot/`, `.bin/`, `bin/`, `.engram/`, `.kbdb/`, and `logs/` caches, **strictly forbidding unscoped `gofmt -l .` and unscoped `gofmt -w .`**, and paired with branch-diff `.go` `gofmt` + LF-only `0 \r` + `git diff --check` verification) until Wave 4 updates the repository's canonical format-gate text on `main`.
 
 ## Constitution Check
 

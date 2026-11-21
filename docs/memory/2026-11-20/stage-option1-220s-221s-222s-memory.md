@@ -61,8 +61,8 @@ Verified against `main` (`b7629617`) and archived via `backlogit_stash_archive` 
   * `219.008-T` (`U8`, `XS`, `trivial`, `docs-only`): `.github/agents/review/concurrency-reviewer.agent.md`, `.github/agents/review/constitution-reviewer.agent.md`
   * `219.009-T` (`U9`, `XS`, `trivial`, `docs-only`): `.github/agents/review/correctness-reviewer.agent.md`, `.github/agents/review/go-quality-reviewer.agent.md`
   * `219.010-T` (`U10`, `XS`, `trivial`, `docs-only`): `.github/agents/review/maintainability-reviewer.agent.md`, `.github/agents/review/schema-cli-docs-coupling-reviewer.agent.md`
-  * `219.011-T` (`U11`, `XS`, `trivial`, `docs-only`): `.github/agents/review/scope-boundary-auditor.agent.md`, `.github/agents/review/template-integrity-reviewer.agent.md`
-  * `219.012-T` (`U12`, `M`, `medium`, `test-first`): `.gsd/harness-manifest.yaml`, `tests/integration/gsd_model_routing_reconciliation_test.go`
+  * `219.011-T` (`U11`, `XS`, `trivial`, `priority: high`, `docs-only`): `.github/agents/review/scope-boundary-auditor.agent.md`, `.github/agents/review/template-integrity-reviewer.agent.md`
+  * `219.012-T` (`U12`, `M`, `medium`, `priority: medium`, `test-first`): `.gsd/config.yaml`, `.gsd/harness-manifest.yaml`, `tests/integration/gsd_model_routing_reconciliation_test.go` (3 files; `219.001-T`..`219.011-T` carry uniform `priority: high` so priority/ID queue ordering matches `220-S` manifest order)
 
 ### Shipment `221-S` (`blocks` on `220-S`, `priority: high`) — Feature `220-F` (Group 1B Part 1: `39F868B1` + `EF372865`)
 
@@ -95,3 +95,13 @@ Verified against `main` (`b7629617`) and archived via `backlogit_stash_archive` 
 * `gsd gate pipeline-topology --mode agent --shipment 220-S --phase pre_claim --json`: `PASS` (`exit_code: 0`, `predecessor_provenance: "declared_root"`, `worktree_cleanliness: "CARRY_FORWARD_ELIGIBLE"`).
 * `pwsh -NoProfile -File scripts/wave-scheduler-sim.ps1 -VerifyAgainstQueue`: `WAVE_SIM_OK: 279/279 assertions PASS across 38 scenario(s)`.
 * Foreign working-tree files preserved untouched: `.gsd/config.yaml`, `.gsd/carry-forward.yaml`, `.gsd/worktree-baseline.json`, and `.kbdb/`.
+
+## 4. Pre-PR Adversarial Review & `rubber-duck` Remediation (`chore/stage-220-S`)
+
+* **`[M-1]` (`P0`)**: Populated `description`, `acceptance-criteria`, and `implementation-notes` (`## File Budget` + canonical 5-key `harness-exemption-contract`) via `backlogit_update_item` across all `docs-only` tasks (`219.001-T`..`219.011-T`, `221.003-T`..`221.008-T`) and verified all 18 `exempt_verification_command` probes exit `1` cleanly pre-deliverable in `pwsh`.
+* **`[M-2]` (`P0`) + `rubber-duck` P2**: Replaced `$null.Trim()` hazard on `git status --porcelain -- docs/cli-reference/` in `220.002-T` with null-safe `@(& git status ...)` array capture and strengthened substantive `tools_dir`, 5-source precedence, `.bin` default / `bin` fallback, `--tools-dir`, and superseded `bin`-only prose assertions.
+* **`[M-3]` (`P1`) + `[U-3]` (`P1`) + `rubber-duck` P2**: Populated `acceptance-criteria`, `## File Budget`, non-vacuous `P-002.6` Item 5 `--- PASS: TestU...` assertions, and canonical one-key `green-regression-contract` JSON blocks (`219.012-T`, `221.002-T`, `221.009-T`, `221.010-T`) across all 6 `test-first` tasks, and specified OS-parameterized `(*Server).validateSessionPathForOS` in `220.001-T` and its plan so both Ubuntu CI and Windows runs guard the Windows `'/'` + `'..'` separator-normalization branch.
+* **`rubber-duck` P1 (`.gsd/config.yaml` ownership)**: Documented the exact target `.gsd/config.yaml` `model_routing` block verbatim in `2026-11-20-gsd-model-routing-manifest-reconciliation-plan.md` and `219.012-T`, adding `.gsd/config.yaml` to `219.012-T`'s 3-file budget (`<= 3 files`).
+* **`[U-1]` (`P1`)**: Aligned `219.001-T`..`219.011-T` to uniform `priority: high` and `219.012-T` to `priority: medium` so priority/ID queue order matches `220-S` Wave 1 manifest order.
+* **`[U-2]` (`P1`) + `rubber-duck` P1**: Explicitly extended `079-DL`'s governed scoped `gofmt -l cmd internal tests scripts` formatting gate (excluding `.copilot/`, `.bin/`, `bin/`, `logs/` and forbidding unscoped `gofmt -l .` / `gofmt -w .`) across `220-S`, `221-S`, and `222-S` Waves 1–4 in `079-DL`, `104-DL`, `105-DL`, `106-DL`, both `2026-11-20` deliberations, all 3 plans, and task `implementation-notes`.
+* **`[U-4]` (`P2`)**: Added `ingested_at: "2026-11-21T00:55:00Z"` to all 5 new `2026-11-20` deliberation and plan headers (`0` violations under both `authoring` and `ingestion` Docline profiles).

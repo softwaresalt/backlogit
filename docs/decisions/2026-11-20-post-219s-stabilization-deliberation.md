@@ -29,6 +29,7 @@ docline:
     - 106-DL
     - 079-DL
   topic: 'Post-219-S stabilization: Windows validateSessionPath separator normalization (39F868B1 / 105-DL), tools_dir documentation (EF372865 / 106-DL), and repository format-gate containment (DF533572 / 079-DL)'
+ingested_at: "2026-11-21T00:55:00Z"
 schema_version: "1.0"
 source: docs/decisions/2026-11-20-post-219s-stabilization-deliberation.md
 title: 'Deliberation: Post-219-S Stabilization — MCP Session Path Validation, Toolchain Documentation, and Repository Format-Gate Containment (39F868B1, EF372865, DF533572)'
@@ -93,10 +94,12 @@ Three post-`219-S` stabilization items are ready for staging following Group 1A 
 Adopt **Option 1B**, **Option 2B**, and **Option 3C**:
 
 1. **Feature `220-F` / Shipment `221-S`** (`blocks` on `220-S`):
-   * `220.001-T` (`U1`, `harness-ready`): Normalize `'/'` and `'\\'` in `(*Server).validateSessionPath` (`internal/mcp/session_mux.go` + `internal/mcp/session_mux_test.go`).
-   * `220.002-T` (`U2`, `harness-exempt: docs-only`): Document `tools_dir`, `.bin` default (`bin` fallback), and `init`/`install --tools-dir` in `docs/configuration.md` and `docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md`.
+   * `220.001-T` (`U1`, `test-first`): Normalize `'/'` and `'\\'` in `(*Server).validateSessionPath` and expose package-internal OS-parameterized `(*Server).validateSessionPathForOS(path, goos string)` (`internal/mcp/session_mux.go` + `internal/mcp/session_mux_test.go`) so both Ubuntu CI (`test` job) and Windows local/CI runs execute and guard the Windows forward-slash `'..'` traversal and separator-normalization branch without `.github/workflows/ci.yml` edits.
+   * `220.002-T` (`U2`, `harness-exempt: docs-only`): Document `tools_dir`, 5-source precedence order, `.bin` default (`bin` fallback), `VerifyProposedLauncherScripts`, and `init`/`install --tools-dir` provisioning (updating superseded `bin`-only prose) in `docs/configuration.md` and `docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md`.
 2. **Feature `221-F` / Shipment `222-S`** (`blocks` on `221-S`):
-   * `221.001-T`..`221.010-T`: Scope `gofmt -l .` / `gofmt -w .` to `gofmt -l cmd internal tests scripts` / `gofmt -w cmd internal tests scripts` across `Makefile` (Wave 1), `make.ps1` (Wave 2), `.gsd/workspace-profile.yaml` (Wave 3), and shared harness docs/instructions/skills/agents/policies + `.gsd/harness-manifest.yaml` (co-scheduled in Wave 4 so each wave has at most one `harness-ready` task on `format_gate_containment_test.go` and `TestU180006_ManifestChecksumsCurrent`, `TestU12_HarnessManifestNamespaceReconciliation`, and `TestU12_GSDModelRoutingManifestReconciliation` stay green at every wave boundary). While `220-S` and `221-S` execute ahead of `222-S`, `079-DL`'s bounded `gofmt -l cmd internal tests scripts` + diff check remains authorized if `.copilot/session-state/` Go caches are populated on the host.
+   * `221.001-T`..`221.010-T`: Scope `gofmt -l .` / `gofmt -w .` to `gofmt -l cmd internal tests scripts` / `gofmt -w cmd internal tests scripts` across `Makefile` (Wave 1), `make.ps1` (Wave 2), `.gsd/workspace-profile.yaml` (Wave 3), and shared harness docs/instructions/skills/agents/policies + `.gsd/harness-manifest.yaml` (co-scheduled in Wave 4 so each wave has at most one `harness-ready` task on `format_gate_containment_test.go` and `TestU180006_ManifestChecksumsCurrent`, `TestU12_HarnessManifestNamespaceReconciliation`, and `TestU12_GSDModelRoutingManifestReconciliation` stay green at every wave boundary).
+3. **Governed Transitional Formatting Gate (`079-DL` / `104-DL` / `105-DL` / `106-DL` across `220-S`, `221-S`, and `222-S` Waves 1–4)**:
+   * Deliberations `079-DL`, `104-DL`, `105-DL`, and `106-DL` explicitly extend `079-DL`'s governed scoped repository Go source-tree formatting gate — `gofmt -l cmd internal tests scripts` (covering `gofmt -l cmd internal tests` plus `scripts`, i.e., 100% of repository Go source directories, while excluding gitignored/local `.copilot/`, `.bin/`, `bin/`, `.engram/`, `.kbdb/`, and `logs/` caches and **strictly forbidding unscoped `gofmt -l .` and unscoped `gofmt -w .`**), paired with branch-diff `.go` `gofmt` + LF-only (`0` `\r`) + `git diff --check` verification — across **all of `220-S`, `221-S`, and `222-S` Waves 1–4** until `222-S` Wave 4 (`221.003-T`..`221.008-T` and `221.010-T`) updates the repository's canonical format-gate text (`AGENTS.md`, `.github/**`, `.gsd/harness-manifest.yaml`) on `main`.
 
 ## Unresolved Questions
 
