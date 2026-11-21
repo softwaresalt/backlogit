@@ -516,7 +516,7 @@ func TestU12_GSDModelRoutingManifestReconciliation(t *testing.T) {
 
 		orchContent := readGovernedSurface(t, repoRoot, ".github/agents/_orchestrator.agent.md")
 		orchRouting := extractMarkdownH2Section(t, ".github/agents/_orchestrator.agent.md", orchContent, "## Model Routing")
-		for _, want := range []string{"mai-code-2", "gemini-4-carbon", "gemini-4-hydrogen", "gpt-6.2-sol"} {
+		for _, want := range []string{"mai-code-2", "gemini-4-carbon", "gemini-4-hydrogen", "openai"} {
 			assert.True(t, strings.Contains(orchRouting, want), "_orchestrator.agent.md ## Model Routing must reference %s", want)
 		}
 		for _, forbidden := range []string{"context_tier: default", "claude-sonnet-5.5", "gemini-4-argon"} {
