@@ -69,3 +69,5 @@ prompt.md
 # kbdb — managed by kbdb install
 .graphtor/
 diff.txt
+.gitignore.noop
+

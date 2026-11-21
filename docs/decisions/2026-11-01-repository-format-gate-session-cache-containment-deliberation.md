@@ -1,6 +1,6 @@
 ---
 chunk_strategy: h1-h2-h3
-description: 'P-021 C6 deliberation for stash entry DF533572 (079-DL) establishing the governed in-scope repository formatting gate verification for 210-S / 209-F (PR #638) and deferring shared harness template and session-cache containment changes in DF533572 to a future shipment.'
+description: 'P-021 C6 deliberation for stash entry DF533572 (079-DL) establishing the governed in-scope repository formatting gate verification for 210-S / 209-F (PR #638), post-219-S harvest into 221-F / 222-S, and transitional scoped gofmt authorization across 220-S, 221-S, and 222-S Waves 1-4.'
 doc_type: decision
 docline:
   decision_status: decided
@@ -8,7 +8,11 @@ docline:
   linked_artifacts:
     - docs/decisions/2026-10-30-declarative-shipment-reconstitution-deliberation.md
     - docs/exec-plans/2026-10-30-declarative-shipment-reconstitution-plan.md
+    - docs/decisions/2026-11-20-post-219s-stabilization-deliberation.md
+    - docs/plans/2026-11-20-repository-format-gate-containment-plan.md
     - .backlogit/archive/079-DL.md
+    - .backlogit/queue/221-F.md
+    - .backlogit/queue/222-S.md
     - .backlogit/queue/209-F.md
     - .backlogit/queue/210-S.md
   promoted_to: backlog
@@ -20,7 +24,12 @@ docline:
     - 079-DL
     - 209-F
     - 210-S
-  topic: 'Repository formatting gate verification vs session cache containment (DF533572 / 210-S)'
+    - 221-F
+    - 220-S
+    - 221-S
+    - 222-S
+  topic: 'Repository formatting gate verification vs session cache containment (DF533572 / 210-S -> 221-F / 222-S)'
+ingested_at: "2026-11-21T03:02:00Z"
 schema_version: "1.0"
 source: docs/decisions/2026-11-01-repository-format-gate-session-cache-containment-deliberation.md
 title: 'Deliberation: Repository Formatting Gate Verification vs Session Cache Containment (DF533572 / 079-DL)'
@@ -40,9 +49,10 @@ During shipment `210-S` (`209-F` / `209.001-T`, PR #638), running literal `gofmt
   * Therefore, for `210-S` (PR #638), the governed formatting gate is satisfied by **both**:
     1. Running `gofmt -l cmd internal tests scripts` in the workspace root (which covers 100% of repository Go source directories and must exit 0 with 0 lines).
     2. Verifying that all modified/new `.go` files in the branch diff are `gofmt`-clean and contain LF-only bytes (`0` `\r` bytes) and `git diff --check` exits 0, while recording `DF533572` (and deliberation `079-DL`) in PR #638's `Follow-ups` under `READY_WITH_FOLLOWUPS` (matching the governed precedent already used on commits `34bdccd3`, `f6fe91be`, `30c76e08`, `fcd5e4ef`, `f336bb21`, and `f43d967f` in `210-S`).
-* **Out-of-scope deferred expansion (`DF533572`)**:
-  * Amending the shared harness template `gofmt -l .` command or introducing a governed workspace cache-relocation tool is confirmed out-of-scope for `210-S` under P-021 C1/C6.
-  * `DF533572` remains an active stash entry linked to decided deliberation artifact `079-DL` for harvesting into a separate future shipment after `210-S` closes, and does **not** block `210-S` / PR #638 once (1) and (2) above pass.
+* **Out-of-scope deferred expansion (`DF533572`) and post-`219-S` harvest + transitional authorization (`220-S`, `221-S`, and `222-S` Waves 1-4)**:
+  * Amending the shared harness template `gofmt -l .` command or introducing a governed workspace cache-relocation tool was confirmed out-of-scope for `210-S` under P-021 C1/C6, so `DF533572` did **not** block `210-S` / PR #638 once (1) and (2) above passed.
+  * Following `219-S` closure (`b7629617`), `DF533572` is harvested into Feature `221-F` / Shipment `222-S` (`221.001-T`..`221.010-T`) per [the post-219-S stabilization deliberation](2026-11-20-post-219s-stabilization-deliberation.md) and [the repository format-gate containment plan](../plans/2026-11-20-repository-format-gate-containment-plan.md), permanently scoping the repository formatting gate to `gofmt -l cmd internal tests scripts` / `gofmt -w cmd internal tests scripts`.
+  * Together with `104-DL`, `105-DL`, and `106-DL`, `079-DL` explicitly extends the governed scoped `gofmt -l cmd internal tests scripts` gate (covering `gofmt -l cmd internal tests` plus `scripts`, excluding gitignored/local `.copilot/`, `.bin/`, `bin/`, `.engram/`, `.kbdb/`, and `logs/` caches, strictly forbidding unscoped `gofmt -l .` and unscoped `gofmt -w .` in both `build-feature` Post-Loop Quality Gates and `Ship` Step 4.3 / Step 4.6, requiring `Ship` Step 4.2 to pass the override verbatim in every `build-feature` prompt, and paired with branch-diff `.go` `gofmt` + LF-only `0` `\r` + `git diff --check` verification) across **`220-S`, `221-S`, and `222-S` Waves 1-4** until `222-S` Wave 4 (`221.003-T`..`221.008-T` + `221.010-T`) updates the repository's canonical format-gate text on `main`.
 
 ### Option B: Modify Shared Workflow/Harness Templates (`AGENTS.md`, `.github/`) Inside `210-S` - Rejected
 
