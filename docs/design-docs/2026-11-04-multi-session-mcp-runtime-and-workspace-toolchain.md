@@ -2,6 +2,7 @@
 chunk_strategy: h1-h2-h3
 description: Multi-session MCP runtime and Level 1 workspace toolchain design and provisioning boundaries
 doc_type: design
+ingested_at: "2026-11-21T22:20:00Z"
 schema_version: "1.0"
 source: docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md
 title: Multi-Session MCP Runtime and Workspace Toolchain
@@ -10,13 +11,16 @@ title: Multi-Session MCP Runtime and Workspace Toolchain
 ## Status and scope
 
 The Option A multi-session runtime (`212-S`), the Level 1 schema and read-only
-inventory verifier (`213-S`), and the Track C launcher/companion MCP auditor,
+inventory verifier (`213-S`), the Track C launcher/companion MCP auditor,
 manifest writer, configuration renderer, strict status integration
 (`backlogit mcp status --toolchain [--strict]`), and repository manifest
-(`.backlogit/toolchain.yaml`) (`214-S`) are implemented. Operator-owned local
-binaries (`./bin/*`) and gitignored `.mcp.json` remain under operator custody;
-the operator procedure below describes how operators provision and verify local
-runtime files against the shipped contract.
+(`.backlogit/toolchain.yaml`) (`214-S`), plus configurable `tools_dir`, the
+`.bin` default with `bin` fallback, `VerifyProposedLauncherScripts`, and
+automated `backlogit init` / `backlogit install --tools-dir` provisioning
+(`218-S` / `219-S`) are implemented. Operator-owned local binaries (in `.bin/`,
+`bin/`, or a declared `tools_dir`) and gitignored `.mcp.json` remain under
+operator custody; the operator procedure below describes how operators
+provision and verify local runtime files against the shipped contract.
 
 See the [requirements](../product-specs/2026-11-04-multi-session-mcp-runtime-requirements.md)
 and [decision](../decisions/2026-11-04-multi-session-mcp-runtime-deliberation.md)
@@ -59,28 +63,47 @@ external CLI processes or arbitrary filesystem writers.
 The `schemas/workspace-toolchain.schema.json` contract declares
 `schema_version: "1.0"`, `containment_level` set to
 `level-1-workspace-local-pinned`, `os_container_sandbox_deferred: true`,
-`workspace_root`, `tools`, and `host_prerequisites`. Tool entries identify their
-class, executable and entrypoint paths, version, SHA-256 or lockfile provenance,
-workspace binding arguments, remote policy, and reason where applicable.
-Classes distinguish `workspace-local-pinned`, `host-prerequisite`,
-`remote-declared`, `built-in-host`, `unsupported`, and `non-conformant`.
-These declarations must not disguise unsupported or unverified tools as pinned.
+`workspace_root`, optional `tools_dir`, `tools`, and `host_prerequisites`.
+`config.yaml` and `toolchain.yaml` both support optional `tools_dir` as a
+validated workspace-relative subdirectory (such as `.bin`, `bin`, or
+`.tools/bin`). Tool entries identify their class, executable and entrypoint
+paths, version, SHA-256 or lockfile provenance, workspace binding arguments,
+remote policy, and reason where applicable. Classes distinguish
+`workspace-local-pinned`, `host-prerequisite`, `remote-declared`,
+`built-in-host`, `unsupported`, and `non-conformant`. These declarations must
+not disguise unsupported or unverified tools as pinned.
+
+When resolving the workspace-pinned `backlogit` executable or default
+`--tools-dir` target, backlogit evaluates five sources in priority order without
+short-circuiting invalid entries:
+
+1. `.mcp.json` (`backlogit` stdio server `command`)
+2. `<storage>/toolchain.yaml` (`backlogit` `executable_path` and/or `tools_dir`)
+3. `<storage>/config.yaml` (`tools_dir`)
+4. `.bin` default (`.bin/backlogit[.exe]`)
+5. `bin` fallback (`bin/backlogit[.exe]` when `bin/` exists and `.bin/` is absent)
 
 `internal/toolchain` provides `LoadToolchainManifest`,
 `DefaultWorkspaceToolchainManifest`, `VerifyWorkspaceToolchain`, and
 `ValidateMCPConfigPinning` (`213-S`), plus `VerifyLauncherScripts`,
-`AuditRepositoryToolchain`, `WriteToolchainManifest`, and
-`RenderPinnedMCPConfig` (`214-S`). Loading checks the selected `.backlog` or
-legacy `.backlogit` storage root; a missing manifest yields an unverified
-default inventory, not a successful pinning claim. Verification is read-only and
-reports findings and violations. It uses workspace-rooted file access and
-checks paths, identity, declared pins, launcher scripts (`start.ps1`,
-`start.sh`), and MCP configuration; it does not overwrite operator-owned tools.
+`VerifyProposedLauncherScripts`, `AuditRepositoryToolchain`,
+`WriteToolchainManifest`, and `RenderPinnedMCPConfig` (`214-S`, `218-S`).
+Loading checks the selected `.backlog` or legacy `.backlogit` storage root; a
+missing manifest yields an unverified default inventory, not a successful
+pinning claim. Verification is read-only and reports findings and violations. It
+uses workspace-rooted file access and checks paths, identity, declared pins,
+launcher scripts (`start.ps1`, `start.sh`), and MCP configuration; it does not
+overwrite operator-owned tools.
 
 `WriteToolchainManifest` writes the selected workspace manifest (such as the
 committed `.backlogit/toolchain.yaml`), `RenderPinnedMCPConfig` renders
-workspace-pinned MCP configuration, and `backlogit mcp status --toolchain [--strict]`
-surfaces live daemon status alongside the Level 1 repository toolchain audit.
+workspace-pinned MCP configuration, `VerifyProposedLauncherScripts` validates
+in-memory launcher script changes before disk replacement, `backlogit init
+[--tools-dir <dir>]` and `backlogit install [--tools-dir <dir>]` automate
+`backlogit` binary installation, `.gitignore`/`.git/info/exclude` wiring,
+`.mcp.json` registration, and `toolchain.yaml`/launcher reconciliation, and
+`backlogit mcp status --toolchain [--strict]` surfaces live daemon status
+alongside the Level 1 repository toolchain audit.
 
 ## Operator-owned verified provisioning
 
@@ -91,9 +114,13 @@ overwrite them as a side effect of verification.
 
 1. Establish trusted sources, versions and SHA-256 digests for workspace-local
    `backlogit`, `engram`, `bun`, `bunx`, GitHub MCP, and `kbdb`. Build
-   `backlogit` from repository source and match its version to
-   `version.Resolve()`. Put platform-appropriate binaries under workspace
-   `bin/`, not a silent global `PATH` fallback.
+   `backlogit` from repository source (or provision it with `backlogit init` /
+   `backlogit install --tools-dir <dir>`) and match its version to
+   `version.Resolve()`. Put platform-appropriate binaries under the workspace
+   tools directory (`.bin/` by default, `bin/` fallback when `bin/` exists and
+   `.bin/` does not, or an explicit `tools_dir` in `config.yaml` /
+   `toolchain.yaml` such as committed `bin/` pins), not a silent global `PATH`
+   fallback.
 2. Pin Context7 and Tavily package versions and lockfile provenance in
    `tools/mcp/package.json` and `tools/mcp/bun.lock`. Provision via the
    operator-owned installer using the local Bun binary, a frozen lockfile and
@@ -105,8 +132,12 @@ overwrite them as a side effect of verification.
    as host prerequisites, and host-native tools as `built-in-host`. Declare
    remote services and their policies rather than representing them as local
    isolation.
-5. Use `WriteToolchainManifest` and `RenderPinnedMCPConfig` to align the
-   workspace manifest and `.mcp.json`, then align `start.ps1` and `start.sh`
+5. Use `backlogit init --tools-dir <dir>` or `backlogit install --tools-dir <dir>`
+   to provision `backlogit`, `.mcp.json`, and ignore rules (reconciling
+   `toolchain.yaml` and verifying proposed launcher updates with
+   `VerifyProposedLauncherScripts` when `toolchain.yaml` exists), and use
+   `WriteToolchainManifest` and `RenderPinnedMCPConfig` to align full
+   multi-tool manifests and `.mcp.json`, then align `start.ps1` and `start.sh`
    with those same local paths. Review custody and local changes before applying
    any generated configuration.
 6. Run `backlogit mcp status --toolchain --strict --format json` for the
