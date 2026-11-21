@@ -47,13 +47,13 @@ See [post-merge runtime verification](220-S-post-merge-runtime-verification.md) 
 | Check | State |
 | --- | --- |
 | Deployment / rollout path | Merge-only harness configuration, agent/skill/instruction definitions, and integration contract tests |
-| Pre-deploy audit | All `8/8` CI checks on PR `#668`, `go vet ./...`, CI-pinned `golangci-lint run`, governed `079-DL`/`104-DL` `gofmt -l cmd internal tests scripts`, `markdownlint-cli2`, `backlogit_docs_lint`, and `gsd verify-workspace` (`0` checksum mismatches) passed |
+| Pre-deploy audit | All `8/8` CI checks on PR `#668`, `go vet ./...`, CI-pinned `golangci-lint run`, governed `079-DL`/`104-DL` `gofmt -l cmd internal tests scripts`, `markdownlint-cli2`, `backlogit_docs_lint`, and `gsd verify-workspace` `checksum_scan` (`0` mismatches) passed |
 | Post-deploy checks | All `5/5` `gsd routing resolve` probes and `6/6` integration contract suites passed on synchronized `main`; `gsd verify-workspace --workspace . --json` passed `0/97` manifest checksum mismatches (`blockers: []`, `strict_schema_blockers: []`), exiting `1` solely on the pre-existing `backlog_registry_cli_surface` (`dispose_shipment`) warning/check outside `220-S` scope |
 | Risky action: governed cascade close | `ActionRisk: destructive`; authorized via dark-mode closure; `ActionResult: applied` (`shipment_status: shipped`, `returned_ids: []`) |
 
 ## Monitoring plan, owner, and rollback
 
-* **Owner**: `_Ship` agent (closure verification); operator (rollback authorization); `_Stage` agent (follow-up triage and next queued shipment `221-S` execution).
+* **Owner**: `_Ship` agent (closure verification and next queued shipment `221-S` execution via `_Orchestrator`); operator (rollback authorization); `_Stage` agent (follow-up stash triage).
 * **Validation window**: Immediate post-merge checks (passed) plus 7-day observation window (`2026-11-21` through `2026-11-28`).
 * **Healthy signals**: `gsd routing resolve` exits `0` across `stage`, `ship`, and `orchestrator`; `TestU12_GSDModelRoutingManifestReconciliation` and `TestU12_HarnessManifestNamespaceReconciliation` green; `gsd verify-workspace` reports `0` checksum mismatches.
 * **Failure signals / rollback trigger**: Any `gsd routing resolve` failure, manifest duplicate-key or checksum regression, or agent `tools:` allowlist drift on `main`.
