@@ -1,10 +1,10 @@
 schema_version: "1.1.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-11-18T23:52:47Z"
+tuned_at: "2026-11-21T05:35:00Z"
 gsd_version: "1.6.0"
 gsd_home: "C:\\Source\\GitHub\\backlogit\\.bin"
 profile_hash: "afd99db4806ac1832083c62b84722bb85307e9e1dd349aca2697976640fe479d"
-config_hash: "2b114a784fdf277e9552280767f798d706695eb8d5e191573486409011096157"
+config_hash: "1bd51a551e52b75e94edd25d2bc27e9e8bc696752b7474c3f75683a1dff0f10e"
 install_preset: full
 capability_packs:
   - backlogit
@@ -148,11 +148,11 @@ artifacts:
   - path: ".github/agents/review/concurrency-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/concurrency-reviewer.agent.md.tmpl"
-    checksum: "ef40f5c2c0e41b221507f9e897ec44094f7d8ea88d479ea775f6ec8f840aa47b"
+    checksum: "214680ad67ec4750eb6ea14ae549f5ef8b5c9d365f7145280c452e33d8d5b8cc"
   - path: ".github/agents/review/agent-native-parity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/agent-native-parity-reviewer.agent.md.tmpl"
-    checksum: "430c0e59a80e00cbebecb27b969d410a3304ac6a6e8f16bbcc6d7dc6d87efc7e"
+    checksum: "948f7bc73217db8738ebe8430aa4a6c6838be29ce002ddbe9caa6de593ce93da"
   - path: ".github/instructions/ci-security.instructions.md"
     primitive: 6
     template: "templates/instructions/ci-security.instructions.md.tmpl"
@@ -179,13 +179,13 @@ artifacts:
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
-    checksum: "745f583a84c9485698029c1f219ed772c681716cefaad03e70e6caf51fc66698"
+    checksum: "cf1cab80cc5c624dd673d465dcb1e889ca718a6860c68a3c180aa18fdc6c384f"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same empty-substitution defect as the companion instruction file, across 7 locations including the reviewer routing table. Replaced with symbolic config key paths. Do not auto-revert. Round-3 fix: added `model_tier: 3` and raised `max_subagent_tier` from 1 to 3; the agent's own routing is claude-opus-4.8 (tier3) and its dispatch tables require Tier 2 and Tier 3 reviewers, which a ceiling of 1 made a P-013.2 violation. Round-4 fix: the readiness verdict let an UNACKNOWLEDGED medium-confidence P0/P1 fall through to READY; added an explicit BLOCKED branch so only acknowledged-and-deferred medium findings reach READY_WITH_FOLLOWUPS. 2026-09-27 tune review: anchor reviewer prose corrected to GPT-6 Sol. 2026-10-04 operator directive: backlogit/* granted (full backlogit tool surface for every mutating agent in this dogfooding workspace)."
   - path: ".github/instructions/adversarial-review.instructions.md"
     primitive: 6
     template: "templates/instructions/adversarial-review.instructions.md.tmpl"
-    checksum: "2e6fb7ffe362dd37ed47b3142122a4ada7edd08fd0b3373cf22b9004efba51ce"
+    checksum: "7d0cf28b4f2d9e3bc6f77fafdf1411d62b6b6a80c182653199103ab47dc32cd8"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). ALT_REVIEW_PROVIDER / ALT_REVIEW_FAMILY resolve to empty strings when no alternate route is configured, so the rendered text lost the setting names entirely and read 'When `` and `` are configured'. Replaced with the symbolic config key paths plus an explicit note that both are unset here. Do not auto-revert."
   - path: ".github/instructions/circuit-breaker.instructions.md"
@@ -285,25 +285,25 @@ artifacts:
   - path: ".github/agents/review/security-sentinel.agent.md"
     primitive: 5
     template: "templates/agents/security-sentinel.agent.md.tmpl"
-    checksum: "35174f83ab0beca2c517373e10b607a97207ac2cec58996c76f1ae3cb4895920"
+    checksum: "4c8dea16fd5714bb159731e49ef5f7ff718e8693299476b69e28c836a40d580f"
     drift_allowed: true
     drift_reason: "2026-09-27 tune review: fixed upstream template defect where a multi-line pattern list was substituted inside inline backticks. Upstream template fix pending. 2026-10-04 operator directive: backlogit/* granted (full backlogit tool surface for every mutating agent in this dogfooding workspace)."
   - path: ".github/agents/review/security-lens-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-lens-reviewer.agent.md.tmpl"
-    checksum: "5683cad5fad549841a0e631c105d32bc513d81636d94645aea85bc0d83b050d2"
+    checksum: "4983ca1b8b61a23ccf8de9b5d167713dd50fc319f861f2f32378c79bb9b70a02"
   - path: ".github/agents/review/security-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/security-reviewer.agent.md.tmpl"
-    checksum: "943e7f95ce2e640dc80ba038c3bec6ff5dd3793e1ce449f6f101ce6019e6e38b"
+    checksum: "3a9d63dfe408925c72abe9d1a89d2cecc948af4fdb2cbd7cc87d54fad98d8f12"
   - path: ".github/agents/review/template-integrity-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/template-integrity-reviewer.agent.md.tmpl"
-    checksum: "b8928c0b1cd4b41ed437278dc5c64a386f2076ba2606f45be1a4c30458f3a80e"
+    checksum: "6670f693bb3c229f82cbbdc80c3ea1a1e9928108748f2f3d1df0aa47244fd22c"
   - path: ".github/agents/review/schema-cli-docs-coupling-reviewer.agent.md"
     primitive: 7
     template: "templates/agents/review/schema-cli-docs-coupling-reviewer.agent.md.tmpl"
-    checksum: "ae60e315fd888ab5e0881cb4c50003d3f133f4401031029ff021ce7d138def51"
+    checksum: "eb78badf56deb2d0b1238b794d56a47353f80bb787ddafaf6fd928a1194547bc"
   - path: ".github/skills/harness-doctor/SKILL.md"
     primitive: 9
     template: "templates/skills/harness-doctor/SKILL.md.tmpl"
@@ -343,30 +343,30 @@ artifacts:
   - path: ".github/agents/subagents/prompt-builder.agent.md"
     primitive: 3
     template: "templates/agents/prompt-builder.agent.md.tmpl"
-    checksum: "5e428d8ab71ba92dd863eede6cbddfcccba615c1837fe7874a012178b60f6a02"
+    checksum: "542cb4b680b16f6e166d0dccc49333caa065e103f8111c3183bca1ea8230ba6e"
     drift_allowed: true
     drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "7bd21ea575938bc9e6ba2090aeb583d2f0a94a660e6c5bb7b7399185b7b998f2"
+    checksum: "95cff6f7256c86fff182c43ae9200f58810a7ab67da7eaa9656077c0db12d3da"
     note: "073-DL E3: the full-suite instruction now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
   - path: ".github/agents/research/learnings-researcher.agent.md"
     primitive: 1
     template: "templates/agents/research/learnings-researcher.agent.md.tmpl"
-    checksum: "c6c2be05dccfa1952f37c740f452edb14e5e171ad70c21604dc232cda190c290"
+    checksum: "19fd977f4cb3ab5fe2c2082a4aa1e378574eb7e14241f7b66dbdbbada3b193b1"
   - path: ".github/agents/_orchestrator.agent.md"
     primitive: 1
     template: "templates/agents/_orchestrator.agent.md.tmpl"
-    checksum: "808b5fb9ee4d49b57a7d817c055e3c02008f902e043f1a50560788534c61e91c"
+    checksum: "026ff09f5821fb8400b0abe325a17937d492d25b980f2af6d8f19645ce926332"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400) granted the eight read-only graphtor verbs by name. Shipment 155-S final-review remediation also recognizes blocked as a governed resumable nonterminal and routes confirmed unblock or MCP-only normalization to Ship without granting Orchestrator lifecycle mutation authority. Do not auto-revert. 2026-09-27 tune review (TUNE-010): Dark Factory DARK_MODE_ACTIVE subagent propagation and concrete-ID scope resolution. 196-F / shipment 196-S (stash 227A2930): Served-Root Handoff Procedure binding both absolute served roots and binding evidence into the Ship payload, with SERVED_ROOTS_UNRESOLVED fail-closed halts; the outcome record is carried to Ship and persisted on the shipment branch, never in the main worktree before Ship's branch gate, and a step e halt record is committed via the Step 1.5 carry-forward before any later Ship invocation (Copilot review and local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
   - path: ".github/agents/_stage.agent.md"
     primitive: 1
     template: "templates/agents/_stage.agent.md.tmpl"
-    checksum: "97c9cefbd61d650d799be87000b27bca2917aa67a8f795646994f8aa7b28814d"
+    checksum: "b5cc6e887617140a51580680d0a70299b2ea2ddf9e28248a3ab133fd7da601c9"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). kbdb is an enabled capability pack and this agent mandates search_local_docs / search_semantic / research_topic, but the tools allowlist granted only engram/*, so the pack could never be used and would always degrade. Added the eight read-only graphtor verbs by name. Enumerated rather than a kbdb/* wildcard so no ingestion or index-write verb is ever reachable. Do not auto-revert. 2026-09-27 tune review (TUNE-010): P-016 Stage spike/research worktree exception. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending. 083-DL: configured native feature/chore-to-task hierarchy and optional subtasks replace the unsupported sub-epic chain; upstream template sync pending."
   - path: ".github/agents/_ship.agent.md"
@@ -406,14 +406,14 @@ artifacts:
   - path: ".github/agents/review/correctness-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/correctness-reviewer.agent.md.tmpl"
-    checksum: "2b4d1550664e9e78e4387f34bef85561256f58604a3499d2077aa9b43820e889"
+    checksum: "d250a6a2ad2bbb6f7bb7170176183235a73fc8b21d00bd87aa1454154c340545"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Tier-1 routing rendered from config.model_routing.tier1. Placed in .github/agents/review/ to match this workspace's established persona layout (the deterministic verifier passes against that layout)."
   - path: ".github/agents/review/maintainability-reviewer.agent.md"
     primitive: 8
     template: "templates/agents/review/maintainability-reviewer.agent.md.tmpl"
-    checksum: "03ca9a3b5055e2e7e11b10868339406253304ba58fd3f1a25104701bbed83fa5"
+    checksum: "796d03d97c5a53811689cea6b70c7c4f3099df103419acd926d6a7955c92a77c"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Added the missing `model_tier: 1`. P-013.4 requires every agent definition to declare both integer tier fields; this persona declared only `max_subagent_tier`, matching neither the policy nor its sibling Tier-1 personas. Do not auto-revert."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass). Same tier-1 rendering and layout rationale as correctness-reviewer."
@@ -426,7 +426,7 @@ artifacts:
   - path: ".github/skills/doc-review/SKILL.md"
     primitive: 8
     template: "templates/skills/doc-review/SKILL.md.tmpl"
-    checksum: "3f06da8da25f286f5893310771d0f3091c24cb89c808746beca7a46381acaa87"
+    checksum: "ade8ba229eecb79c739c4aeebf294823175fba893cad3d79540f3aaad444803d"
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The skill unconditionally required a `ping` call at session start, but agent-intercom is not in capability_packs for this workspace, so doc-review would open with a nonexistent tool call and report an intentionally absent optional pack as degraded. Made communication conditional using the same wording the review skill already uses. Do not auto-revert. Round-3 fix: made skill `name` optional in Check 2 (14 of 25 installed skills omit it) and added a disabled-capability-pack exemption to Checks 4 and 5 so conditional references to the intentionally-absent agent-intercom instruction file are not reported as broken. Round-4 fix: the gated_auto action class named agent-intercom as its default owner, which is unavailable here and contradicted the skill's own Operator Communication section; retargeted to the local strict-safety decision gate with intercom as the installed-only route. Round-5 fix: the tier-annotation check asserted there is no `model_tier` frontmatter field and verified only `max_subagent_tier`, which is the opposite of P-013.4; it now requires both integer fields."
     note: "Installed 2026-08-31 (1.5.0 merge-install gap pass); alternate doc-review route bound 2026-08-31. ALT_DOC_REVIEW_PROVIDER / ALT_DOC_REVIEW_FAMILY resolve to google / gemini-4-hydrogen from config.yaml model_routing.alt_doc_review (family refreshed by the 2026-11-18 tune). Google is deliberately a third provider so the documentation review pass is less likely to share blind spots with whichever model authored the docs. Clear either field in config.yaml AND in variables_used to fall back to Tier 2."
@@ -608,8 +608,8 @@ variables_used:
   DOCS_DESIGN_DOCS_DIR: "design-docs"
   DOCS_PRODUCT_SPECS_DIR: "product-specs"
   MODEL_ROUTING_TIER1: "claude-haiku-5.5"
-  MODEL_ROUTING_TIER2: "claude-sonnet-5.5"
-  MODEL_ROUTING_TIER3: "gemini-4-argon"
+  MODEL_ROUTING_TIER2: "mai-code-2"
+  MODEL_ROUTING_TIER3: "gemini-4-carbon"
   PRIMARY_LANGUAGE: "Go"
   LANGUAGE_VERSION: "1.24.0"
   BUILD_COMMAND: "go build ./cmd/backlogit"
@@ -639,19 +639,19 @@ variables_used:
   ALT_REVIEW_PROVIDER: ""
   ALT_REVIEW_FAMILY: ""
   ANCHOR_REVIEW_PROVIDER: "openai"
-  ANCHOR_REVIEW_FAMILY: "gpt-6.1-sol"
+  ANCHOR_REVIEW_FAMILY: "gpt-6.2-sol"
   ANCHOR_REVIEW_REASONING_EFFORT: "high"
   # P-013.6 render seed. No flat route is configured, so the role-neutral
   # ESCALATION_* fallback resolves to tier3. Per-role resolver values are
   # recorded separately below and remain authoritative when nested blocks exist.
-  ESCALATION_FAMILY: "gemini-4-argon"
+  ESCALATION_FAMILY: "gemini-4-carbon"
   ESCALATION_PROVIDER: "google"
   ESCALATION_REASONING_EFFORT: "high"
-  STAGE_ESCALATION_FAMILY: "gpt-6.1-sol"
+  STAGE_ESCALATION_FAMILY: "gpt-6.2-sol"
   STAGE_ESCALATION_PROVIDER: "openai"
   STAGE_ESCALATION_REASONING_EFFORT: "high"
   STAGE_ESCALATION_CONTEXT_TIER: "long_context"
-  SHIP_ESCALATION_FAMILY: "gpt-6.1-sol"
+  SHIP_ESCALATION_FAMILY: "gpt-6.2-sol"
   SHIP_ESCALATION_PROVIDER: "openai"
   SHIP_ESCALATION_REASONING_EFFORT: "medium"
   SHIP_ESCALATION_CONTEXT_TIER: "long_context"

@@ -24,7 +24,7 @@ compatible with the standard review persona routing model.
 
 ## Alternate Model Support
 
-When `google` and `gemini-3.8-flash` are
+When `google` and `gemini-4-hydrogen` are
 configured, the review pass uses those provider and family values instead of
 the default Tier 2 routing. This allows the documentation review to use Gemini,
 a different Anthropic family, or any provider registered in the workspace model
@@ -249,7 +249,7 @@ before the next verification pass
 
 1. Read `google` and `gemini-4-hydrogen`.
 2. If both are non-empty: use the alternate provider/family for this review
-   pass. Log `[DOC-REVIEW] Using alternate model: gemini-3.8-flash
+   pass. Log `[DOC-REVIEW] Using alternate model: gemini-4-hydrogen
    (provider: google)`.
 3. If either is empty: use Tier 2 defaults.
 

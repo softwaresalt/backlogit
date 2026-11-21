@@ -6,10 +6,10 @@ tools: read, search, terminal, edit, backlogit/*
 model_routing: "Tier 3 (Frontier)"  # DEPRECATED — use model_tier
 model_tier: 3
 max_subagent_tier: 3
-reasoning_effort: "xhigh"
-model_provider: "anthropic"
-model_family: "claude-sonnet-5.5"
-context_tier: "default"
+reasoning_effort: "high"
+model_provider: "google"
+model_family: "gemini-4-carbon"
+context_tier: "long_context"
 subagent_depth: 0
 ---
 
