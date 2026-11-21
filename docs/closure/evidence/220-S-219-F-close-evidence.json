@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "shipment_id": "220-S",
+  "feature_id": "219-F",
+  "merge_commit_sha": "98aa1bf4033c5662005b4b9d236dfb5bc1090ade",
+  "phase": "post_close",
+  "invocation": {
+    "surface": "mcp",
+    "tool": "backlogit_ship_shipment",
+    "arguments": {
+      "id": "220-S",
+      "sha": "98aa1bf4033c5662005b4b9d236dfb5bc1090ade",
+      "message": "Merge pull request #668 (220-S / 219-F)",
+      "author": "ship"
+    },
+    "mutation_state": "completed"
+  },
+  "pre_close": {
+    "reconcile_report": ".backlogit/reconcile/220-S-pre-20261121T083214Z.md",
+    "manifest_members": [
+      { "id": "219-F", "artifact_type": "feature", "location": "queue", "declared_status": "active", "classification": "feature-pending-governed-completion" },
+      { "id": "219.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.003-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.004-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.005-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.006-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.007-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.008-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.009-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.010-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.011-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" },
+      { "id": "219.012-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "219-F", "classification": "pre-archived" }
+    ],
+    "recommendation": "PROCEED"
+  },
+  "post_close": {
+    "reconcile_reports": [
+      ".backlogit/reconcile/220-S-safe-close-20261121T083914Z.md",
+      ".backlogit/reconcile/220-S-post-20261121T083930Z.md"
+    ],
+    "shipment_status": "shipped",
+    "shipment_record_status": "archived",
+    "shipment_record_archived_status": "shipped",
+    "commit_sha": "98aa1bf4033c5662005b4b9d236dfb5bc1090ade",
+    "returned_ids": [],
+    "archived_ids": [
+      "219.001-T",
+      "219.002-T",
+      "219.003-T",
+      "219.004-T",
+      "219.005-T",
+      "219.006-T",
+      "219.007-T",
+      "219.008-T",
+      "219.009-T",
+      "219.010-T",
+      "219.011-T",
+      "219.012-T",
+      "219-F",
+      "220-S"
+    ],
+    "parent_id_preserved": true,
+    "p007_archive_integrity": "PASS",
+    "doctor_shipped_event_findings_for_220_S": 0,
+    "non_member_untouched": true,
+    "postcondition_verdict": "pass",
+    "failures": []
+  }
+}
