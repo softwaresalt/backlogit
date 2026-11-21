@@ -48,7 +48,7 @@ See [post-merge runtime verification](220-S-post-merge-runtime-verification.md) 
 | --- | --- |
 | Deployment / rollout path | Merge-only harness configuration, agent/skill/instruction definitions, and integration contract tests |
 | Pre-deploy audit | All `8/8` CI checks on PR `#668`, `go vet ./...`, CI-pinned `golangci-lint run`, governed `079-DL`/`104-DL` `gofmt -l cmd internal tests scripts`, `markdownlint-cli2`, `backlogit_docs_lint`, and `gsd verify-workspace` (`0` checksum mismatches) passed |
-| Post-deploy checks | All `5/5` `gsd routing resolve` probes, `gsd verify-workspace` (`0/97` checksum mismatches), and `6/6` integration contract suites passed on synchronized `main` |
+| Post-deploy checks | All `5/5` `gsd routing resolve` probes and `6/6` integration contract suites passed on synchronized `main`; `gsd verify-workspace --workspace . --json` passed `0/97` manifest checksum mismatches (`blockers: []`, `strict_schema_blockers: []`), exiting `1` solely on the pre-existing `backlog_registry_cli_surface` (`dispose_shipment`) warning/check outside `220-S` scope |
 | Risky action: governed cascade close | `ActionRisk: destructive`; authorized via dark-mode closure; `ActionResult: applied` (`shipment_status: shipped`, `returned_ids: []`) |
 
 ## Monitoring plan, owner, and rollback
@@ -61,11 +61,11 @@ See [post-merge runtime verification](220-S-post-merge-runtime-verification.md) 
 
 ## Source artifact provenance
 
-Feature `219-F` records `source_stash_id: BE9AD4F1` and `source_deliberation_id: 104-DL` (`docs/decisions/2026-11-20-gsd-model-routing-manifest-reconciliation-deliberation.md`, archived `.backlogit/archive/104-DL.md`); Task `219.003-T` records `source_stash_id: A991B4AC`. Referenced source stash and deliberation artifacts are retained untouched as provenance only.
+Feature `219-F` records `source_stash_id: BE9AD4F1` and `source_deliberation_id: 104-DL` (`docs/decisions/2026-11-20-gsd-model-routing-manifest-reconciliation-deliberation.md`, archived `.backlogit/archive/104-DL.md`); Task `219.003-T` records `source_stash_id: A991B4AC`. Source stash entries `BE9AD4F1` and `A991B4AC` were harvested/archived in `.backlogit/archive/stash.jsonl` prior to `220-S` Ship execution and were left untouched by `220-S` closure as provenance only.
 
 ## Tracked residual risks, P-021 C2 deferrals, and follow-up stash entries
 
-Four `P-021 C2` deferred scope expansions captured during `220-S` review remain active in `.backlogit/stash.jsonl` for Stage triage (not mutated by Ship):
+Four `P-021 C2` deferred scope expansions captured during `220-S` review remain active in `.backlogit/stash.jsonl` for Stage triage (not mutated by Ship per P-021 C5 single-write capture invariant; Stage enforces P-021 C6 deliberation at intake regardless of provisional `requires_deliberation` flags):
 
 * **`072973EA`**: Reconcile `model_routing.alt_doc_review` diversity rationale and provider selection in `.gsd/config.yaml:94` and `.gsd/harness-manifest.yaml:429` (`P-021 C2`).
 * **`09AFFA9D`**: Clarify historical `claude-opus-4.8` Round-3 Tier 3 routing wording in `.gsd/harness-manifest.yaml` `drift_reason` fields (`P-021 C2`).
@@ -79,7 +79,7 @@ Four `P-021 C2` deferred scope expansions captured during `220-S` review remain 
 
 ## Dark-mode closure summary (`DARK_MODE_ACTIVE`, `P-017`)
 
-* **Degraded remote visibility**: `agent-intercom` is not installed; all dark-mode events (`LOCAL_REVIEW_READY`, `DARK_MODE_MERGE_AUTHORIZED`, `DARK_MODE_COMPLETE`) recorded in local session output and PR readiness/closure records. `ROUTING_DEGRADED: context_tier` (`P-013.5`, non-blocking) and `ENGRAM_DEGRADED` (`[PACK-ROUTING]`) recorded per contract.
+* **Degraded remote visibility**: `agent-intercom` is not installed; all dark-mode events (`LOCAL_REVIEW_READY`, `DARK_MODE_MERGE_AUTHORIZED`, and final `DARK_MODE_COMPLETE` emitted once the closure PR merges to `main`) are recorded in local session output and PR readiness/closure records. `ROUTING_DEGRADED: context_tier` (`P-013.5`, non-blocking) and `ENGRAM_DEGRADED` (`[PACK-ROUTING]`) recorded per contract.
 * **Reviewed HEADs**: Feature PR `#668` reviewed at `5bd018aa217ea4f1aa069540bf1b09aabb7b7ee0` (`READY_WITH_FOLLOWUPS`, `P0=0, P1=0`); merged via merge commit `98aa1bf4033c5662005b4b9d236dfb5bc1090ade` (normal merge, no admin fallback).
 * **P-020 compaction status**: `done`.
 * **Closure status**: `READY`.

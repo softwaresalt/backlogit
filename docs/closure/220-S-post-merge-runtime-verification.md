@@ -36,7 +36,7 @@ Post-merge runtime verification for Shipment `220-S` (`219-F`, merged at `98aa1b
 | `gsd routing resolve --workspace . --site stage --kind escalation --json` | `gpt-6.2-sol` / `openai` / `high` / `long_context` | `0` | `errors: []`, `degraded: []` |
 | `gsd routing resolve --workspace . --site ship --kind escalation --json` | `gpt-6.2-sol` / `openai` / `medium` / `long_context` | `0` | `errors: []`, `degraded: []` |
 | `gsd verify-workspace --workspace . --json` | `0` checksum mismatches, `strict_schema_blockers: []` | `1` (pre-existing `backlog_registry_cli_surface` `dispose_shipment` only) | `checksum_scan: 97 total, 0 mismatches`, `blockers: []`, `strict_schema_blockers: []` |
-| `go test -timeout=30m -count=1 -v -run '^(TestU12_GSDModelRoutingManifestReconciliation\|...)$' ./tests/integration` | All 6 contract suites pass | `0` | `PASS` (`7.214s`) |
+| `go test -timeout=30m -count=1 -v -run '^(TestU12_GSDModelRoutingManifestReconciliation\|TestU12_HarnessManifestNamespaceReconciliation\|TestUSR6_HarnessManifestDriftRecords\|TestUCXS17_RefreshedDriftRecords\|TestU19R3_ManifestBudgetReconciliation\|TestWorkspaceAgentsGrantFullBacklogitToolSurface)$' ./tests/integration` | All 6 contract suites pass | `0` | `PASS` (`7.214s`) |
 
 ## Verdict
 

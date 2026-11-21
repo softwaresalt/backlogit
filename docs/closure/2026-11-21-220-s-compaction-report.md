@@ -33,8 +33,8 @@ Invoked P-020 `compact-context` with `target: all` and default thresholds (`thre
 All `220-S` tasks (`219.001-T`..`219.012-T`), covering feature `219-F`, and shipment `220-S` are `archived`. Evaluated all `220-S` memory and closure artifacts:
 
 * Created dense compacted summary [220-S compacted memory](../memory/compacted/2026-11-21-220-s-219-f-compacted.md) consolidating `docs/memory/2026-11-21/220-s-served-root-handoff.md` and `docs/memory/2026-11-21/220-s-session-summary.md`.
-* Preserved current-session `220-S` memory and closure files in place (`<= 2` days old, referenced by PR `#668` and closure PR).
-* Preserved `docs/plans/2026-11-20-gsd-model-routing-manifest-reconciliation-plan.md` in place per `compact-context` relocation-approval rule.
+* Preserved current-session `220-S` memory and closure files in place (`< 1` day old, inside `threshold_days: 14`, referenced by PR `#668` and closure PR, and honoring the `compact-context` constraint to preserve the most recent checkpoint per completed scope without deleting files).
+* Preserved `docs/plans/2026-11-20-gsd-model-routing-manifest-reconciliation-plan.md` in place per `compact-context` relocation-approval rule; older unrelated `docs/memory/` files outside `220-S` are deferred from bulk relocation to avoid expanding closure scope.
 
 ## Counts and completion status
 
