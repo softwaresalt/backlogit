@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "shipment_id": "221-S",
+  "feature_id": "220-F",
+  "merge_commit_sha": "a079f4527a9243413ea992ad0701225fac722cc5",
+  "phase": "post_close",
+  "invocation": {
+    "surface": "mcp",
+    "tool": "backlogit_ship_shipment",
+    "arguments": {
+      "id": "221-S",
+      "sha": "a079f4527a9243413ea992ad0701225fac722cc5",
+      "message": "Merge pull request #670 (221-S / 220-F)",
+      "author": "ship"
+    },
+    "mutation_state": "completed"
+  },
+  "pre_close": {
+    "reconcile_report": ".backlogit/reconcile/221-S-pre-20261122T025740Z.md",
+    "manifest_members": [
+      { "id": "220-F", "artifact_type": "feature", "location": "queue", "declared_status": "active", "classification": "feature-pending-governed-completion" },
+      { "id": "220.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived" },
+      { "id": "220.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived" }
+    ],
+    "recommendation": "PROCEED"
+  },
+  "post_close": {
+    "reconcile_reports": [
+      ".backlogit/reconcile/221-S-safe-close-20261122T025829Z.md",
+      ".backlogit/reconcile/221-S-post-20261122T025829Z.md"
+    ],
+    "shipment_status": "shipped",
+    "shipment_record_status": "archived",
+    "shipment_record_archived_status": "shipped",
+    "commit_sha": "a079f4527a9243413ea992ad0701225fac722cc5",
+    "returned_ids": [],
+    "archived_ids": [
+      "220.001-T",
+      "220.002-T",
+      "220-F",
+      "221-S"
+    ],
+    "parent_id_preserved": true,
+    "p007_archive_integrity": "PASS",
+    "doctor_shipped_event_findings_for_221_S": 0,
+    "non_member_untouched": true,
+    "postcondition_verdict": "pass",
+    "failures": []
+  }
+}
