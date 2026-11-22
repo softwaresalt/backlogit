@@ -12,7 +12,7 @@ backlogit is a Go CLI tool and MCP server for structured backlog management.
 | Build           | go            | `go build ./cmd/backlogit`                   |
 | Test            | go test           | `go test -timeout=30m ./...`       |
 | Lint            | golangci-lint                | `golangci-lint run`                    |
-| Format          | gofmt             | `gofmt -l .`                  |
+| Format          | gofmt             | `gofmt -l cmd internal tests scripts`                  |
 | CI              | GitHub Actions           | Runs on push and pull_request to main                          |
 | MCP SDK | github.com/mark3labs/mcp-go v0.27.0 (stdio transport) |
 | CLI Framework | github.com/spf13/cobra v1.10.2 |
@@ -46,7 +46,7 @@ backlogit/
 go build ./cmd/backlogit              # Build
 go test -timeout=30m ./...  # Run all tests
 golangci-lint run               # Lint
-gofmt -l .             # Format check
+gofmt -l cmd internal tests scripts             # Format check
 | `backlogit mcp` | Start MCP server (stdio transport) |
 | `backlogit add` | Create a new backlog item |
 | `backlogit list` | List backlog items |

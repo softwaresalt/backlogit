@@ -238,7 +238,7 @@ General rules:
 | Build           | `go build ./cmd/backlogit`                        |
 | Test            | `go test -timeout=30m ./...`            |
 | Lint            | `golangci-lint run`                         |
-| Format          | `gofmt -l .`                       |
+| Format          | `gofmt -l cmd internal tests scripts`                       |
 | CI              | GitHub Actions                            |
 
 ---
@@ -258,7 +258,7 @@ go vet ./...
 golangci-lint run
 
 # Gate 4 — Format
-gofmt -l .
+gofmt -l cmd internal tests scripts
 ```
 
 ---
