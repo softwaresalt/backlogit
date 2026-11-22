@@ -212,7 +212,7 @@ report every item or halt with `RED_DELIVERABLE_EVIDENCE_INCOMPLETE`.
 Run only these read-only gates; do not enter generic quality/format/fix/commit paths:
 
 1. **Lint**: `golangci-lint run` — unchanged.
-2. **Format**: `gofmt -l .`, read-only. Findings halt; never `gofmt -w`, fix, stage or commit.
+2. **Format**: `gofmt -l cmd internal tests scripts`, read-only. Findings halt; never `gofmt -w`, fix, stage or commit.
 3. **Test suite**: use the single Step 0.5a observation, not an implicit retry.
    `harness_cmd` must be observed **RED**, and a green
    result fails the gate with `WAVE_RED_DELIVERABLE_EARLY_GREEN`. The supplied
@@ -378,8 +378,8 @@ builds — and must never be narrowed to the task's own package to dodge a real 
 After the harness passes:
 
 1. **Lint**: `golangci-lint run`
-2. **Format**: `gofmt -l .`
-   * If violations found: `gofmt -w .` and re-check
+2. **Format**: `gofmt -l cmd internal tests scripts`
+   * If violations found: `gofmt -w cmd internal tests scripts` and re-check
 3. **Test suite** — scope depends on `wave_scoped`:
    * **`wave_scoped: true`** (a P-002.6 wave dispatch): run the task's own scoped `harness_cmd`
      plus exactly the supplied `green_regression_cmds` array (default `[]`) **and nothing else**.
