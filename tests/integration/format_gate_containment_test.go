@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 var unscopedGofmtLine = regexp.MustCompile(`\bgofmt\s+-l\s+\.(?:$|\s|[;|&)"'])`)
@@ -179,5 +180,45 @@ func TestU2_MakePS1FormatGateScopesSourceDirectories(t *testing.T) {
 		} else {
 			t.Logf("pwsh not found on PATH (%v); skipping pwsh make.ps1 fmt execution", lookErr)
 		}
+	})
+}
+
+func TestU9_WorkspaceProfileFormatGateScopesSourceDirectories(t *testing.T) {
+	type workspaceProfileDoc struct {
+		Format struct {
+			Tool         string `yaml:"tool"`
+			Command      string `yaml:"command"`
+			CheckCommand string `yaml:"check_command"`
+			FixCommand   string `yaml:"fix_command"`
+		} `yaml:"format"`
+		Test struct {
+			Runner    string `yaml:"runner"`
+			Command   string `yaml:"command"`
+			Directory string `yaml:"directory"`
+		} `yaml:"test"`
+	}
+
+	repoRoot := testRepoRoot(t)
+
+	t.Run("YAML key uniqueness", func(t *testing.T) {
+		var dupNode yaml.Node
+		require.NoError(t, yaml.Unmarshal([]byte("a: 1\na: 2\n"), &dupNode))
+		require.Error(t, checkUniqueYAMLMappingKeys(&dupNode), "checkUniqueYAMLMappingKeys must reject duplicate YAML mapping keys")
+
+		raw := readGovernedSurface(t, repoRoot, ".gsd/workspace-profile.yaml")
+		profile := decodeUniqueYAML[workspaceProfileDoc](t, ".gsd/workspace-profile.yaml", raw)
+		assert.NotEmpty(t, profile.Format.Command, ".gsd/workspace-profile.yaml format.command must not be empty")
+		assert.NotEmpty(t, profile.Test.Command, ".gsd/workspace-profile.yaml test.command must not be empty")
+	})
+
+	t.Run("format commands and test budget invariants", func(t *testing.T) {
+		raw := readGovernedSurface(t, repoRoot, ".gsd/workspace-profile.yaml")
+		profile := decodeUniqueYAML[workspaceProfileDoc](t, ".gsd/workspace-profile.yaml", raw)
+
+		assert.Equal(t, "gofmt -l cmd internal tests scripts", profile.Format.Command, "format.command must scope gofmt to Go source directories")
+		assert.Equal(t, "gofmt -l cmd internal tests scripts", profile.Format.CheckCommand, "format.check_command must scope gofmt to Go source directories")
+		assert.Equal(t, "gofmt -w cmd internal tests scripts", profile.Format.FixCommand, "format.fix_command must scope gofmt to Go source directories")
+		assert.Equal(t, "go test -timeout=30m ./...", profile.Test.Command, "test.command must enforce 30m timeout")
+		assert.Equal(t, "go test", profile.Test.Runner, "test.runner must be go test")
 	})
 }
