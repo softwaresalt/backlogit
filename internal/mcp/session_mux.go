@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,11 @@ import (
 )
 
 const maxSessionFrameBytes = 4 * 1024 * 1024
+
+var (
+	windowsSessionPathReplacer = strings.NewReplacer("/", "\\", "\\", "\\")
+	posixSessionPathReplacer   = strings.NewReplacer("/", "/", "\\", "/")
+)
 
 // MultiSessionConn is an independently cancellable, line-framed SDK session.
 // ServeSessionStream owns its workers and never closes the notification channel:
@@ -381,12 +387,28 @@ func (c *MultiSessionConn) startResponse(ctx context.Context, produce func() mcp
 	}()
 }
 
-func (s *Server) validateSessionPath(path string) (result error) {
-	path = strings.ReplaceAll(strings.TrimSpace(path), "\\", string(filepath.Separator))
-	if !filepath.IsLocal(path) {
+func (s *Server) validateSessionPath(path string) error {
+	return s.validateSessionPathForOS(path, runtime.GOOS)
+}
+
+func (s *Server) validateSessionPathForOS(path, goos string) (result error) {
+	if s == nil {
+		return fmt.Errorf("validate MCP tool path: nil server: %w", corerrors.ErrValidation)
+	}
+	if strings.TrimSpace(goos) == "" {
+		return fmt.Errorf("%w: target OS must not be empty", corerrors.ErrValidation)
+	}
+	trimmed := strings.TrimSpace(path)
+	sep := "/"
+	normalized := posixSessionPathReplacer.Replace(trimmed)
+	if goos == "windows" {
+		sep = "\\"
+		normalized = windowsSessionPathReplacer.Replace(trimmed)
+	}
+	if !isLocalSessionPathForOS(normalized, goos) {
 		return fmt.Errorf("MCP tool path must be workspace-relative: %w", corerrors.ErrValidation)
 	}
-	components := strings.Split(path, string(filepath.Separator))
+	components := strings.Split(normalized, sep)
 	for _, component := range components {
 		if component == ".." {
 			return fmt.Errorf("MCP tool path contains parent traversal: %w", corerrors.ErrValidation)
@@ -401,14 +423,17 @@ func (s *Server) validateSessionPath(path string) (result error) {
 		return fmt.Errorf("open MCP workspace root: %w", err)
 	}
 	defer func() {
-		if err := root.Close(); err != nil {
-			result = errors.Join(result, fmt.Errorf("close MCP workspace root: %w", err))
+		if closeErr := root.Close(); closeErr != nil {
+			result = errors.Join(result, fmt.Errorf("close MCP workspace root: %w", closeErr))
 		}
 	}()
 	relative := "."
 	// Inspect original components, not just Clean(path): link/../file must
 	// never hide a link that the handler's own path resolver could traverse.
 	for _, component := range components {
+		if component == "" {
+			continue
+		}
 		relative = filepath.Join(relative, component)
 		info, err := root.Lstat(relative)
 		if errors.Is(err, os.ErrNotExist) {
@@ -426,6 +451,62 @@ func (s *Server) validateSessionPath(path string) (result error) {
 		}
 	}
 	return nil
+}
+
+func isLocalSessionPathForOS(normalized, goos string) bool {
+	if strings.TrimSpace(goos) == "" {
+		return false
+	}
+	if normalized == "" || strings.IndexByte(normalized, 0) >= 0 {
+		return false
+	}
+	if strings.HasPrefix(normalized, "/") || strings.HasPrefix(normalized, "\\") {
+		return false
+	}
+	sep := "/"
+	if goos == "windows" {
+		sep = "\\"
+		if strings.IndexByte(normalized, ':') >= 0 {
+			return false
+		}
+	}
+	for _, segment := range strings.Split(normalized, sep) {
+		if segment == ".." {
+			return false
+		}
+		if goos == "windows" {
+			if segment != "" && segment != "." && (strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ")) {
+				return false
+			}
+			if isWindowsReservedDeviceName(segment) {
+				return false
+			}
+		}
+	}
+	if goos == runtime.GOOS && !filepath.IsLocal(normalized) {
+		return false
+	}
+	return true
+}
+
+func isWindowsReservedDeviceName(segment string) bool {
+	stem := segment
+	if idx := strings.IndexAny(stem, ".:"); idx >= 0 {
+		stem = stem[:idx]
+	}
+	stem = strings.TrimRight(stem, " .")
+	upper := strings.ToUpper(stem)
+	switch upper {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return true
+	}
+	if strings.HasPrefix(upper, "COM") || strings.HasPrefix(upper, "LPT") {
+		switch upper[3:] {
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+			return true
+		}
+	}
+	return false
 }
 
 func sessionRequestIDKey(raw json.RawMessage) string {

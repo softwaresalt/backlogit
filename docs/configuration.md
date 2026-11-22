@@ -132,12 +132,13 @@ This is the stash metadata that also appears in `backlogit metadata catalog` and
 
 ## config.yaml
 
-`config.yaml` defines the structural model for work items. The loader expects these top-level keys:
+`config.yaml` defines the structural model for work items and optional workspace tool-directory configuration. The loader expects these top-level keys:
 
 * `artifact_types`
 * `fields`
 * `max_slug_length`
 * `queue_layout`
+* `tools_dir` (optional)
 
 ### Current default
 
@@ -211,6 +212,19 @@ queue_layout:
 `max_slug_length` is still loaded, but with the current ID-only default naming it matters only for custom `name_format` patterns that use slug placeholders.
 
 `queue_layout` defines the hierarchy levels used by typed hierarchical IDs. In the current implementation, `root_dir` controls the active-work directory, and `levels` determines which types are valid at each depth.
+
+`tools_dir` (optional string scalar) configures the workspace-relative subdirectory where pinned tool binaries reside (for example `".bin"`, `"bin"`, or `".tools/bin"`).
+
+* **Config-load validation (`validateWorkspaceToolsDir`)**: when `tools_dir` is present in `config.yaml`, `config.Load` requires a non-empty YAML string scalar (`!!str`). `validateWorkspaceToolsDir` rejects blank or whitespace-padded strings, NUL bytes, rooted or absolute paths, volume/drive/UNC prefixes, `..` traversal segments, non-local paths or `"."`, and reserved directories `.git` and `.backlog`. `config.Load` also rejects the active storage directory basename (such as `.backlogit` in legacy workspaces).
+* **Daemon, provisioning, and manifest validation (`validateDaemonToolsDirRel` and `validManifestToolsDir`)**: daemon binary discovery, `backlogit init` / `backlogit install --tools-dir`, and `toolchain.yaml` validation reject all ASCII control characters (`< 0x20` or `0x7f`) and reserved leading segments `.git`, `.backlog`, `.backlogit`, `.gitignore`, `.mcp.json`, `start.ps1`, and `start.sh` (case-insensitive). Filesystem symlink and reparse-point inspection runs on `toolchain.yaml` `tools_dir` (`resolveToolchainDaemonBinaryRel` / `validManifestToolsDir`), the finally selected daemon binary (`verifyPinnedDaemonBinaryRel`), and the `init` / `install` target directory, whereas `config.yaml` `tools_dir` discovery (`validateDaemonToolsDirRel` in `resolveConfigDaemonBinaryRel`) performs lexical validation only until `verifyPinnedDaemonBinaryRel` inspects the selected binary path.
+* **Five-source binary discovery precedence**: when resolving the workspace-pinned `backlogit` binary for MCP daemon attachment or default `--tools-dir` selection, backlogit evaluates all five sources without short-circuiting malformed entries and selects the first configured source in order:
+  1. `.mcp.json`: `backlogit` stdio server `command` in `mcpServers` or `servers`
+  2. `<storage>/toolchain.yaml`: `backlogit` `executable_path` and/or top-level `tools_dir`
+  3. `<storage>/config.yaml`: top-level `tools_dir`
+  4. `.bin` default: `.bin/backlogit` (or `.bin/backlogit.exe` on Windows)
+  5. `bin` fallback:
+     * `--tools-dir` default target selection (`defaultTargetToolsDir` in `internal/cli/mcp_daemon.go`): selects `bin` when `bin/` exists and `.bin/` is absent
+     * MCP daemon executable attachment (`pinnedMCPDaemonBinary` in `internal/cli/mcp_daemon.go`): probes `.bin/backlogit[.exe]` and falls back to `bin/backlogit[.exe]` on `os.ErrNotExist` (even if an empty `.bin/` directory exists)
 
 ### Hierarchy examples
 
@@ -783,6 +797,7 @@ backlogit uses `.backlogit/toolchain.yaml` (validated against `schemas/workspace
 * `containment_level`: must be `"level-1-workspace-local-pinned"`
 * `os_container_sandbox_deferred`: must be `true`
 * `workspace_root`: canonical or repo-relative workspace root (for example `"."`)
+* `tools_dir` (optional): workspace-relative subdirectory for pinned tool executables (for example `".bin"`, `"bin"`, or `".tools/bin"`). When explicitly non-empty, `validBacklogitToolInManifest` requires the `backlogit` entry's `executable_path` directory to match `tools_dir`; when omitted, any valid non-reserved workspace-relative subdirectory passes verification. `effectiveManifestToolsDir` resolves the effective directory in order: valid non-reserved `tools_dir`, else the `backlogit` `executable_path` directory, else the first `workspace-local-pinned` tool directory, else `".bin"`.
 * `tools`: array of declared MCP servers, local tools, and built-in host tools
 * `host_prerequisites`: array of explicit host runtime commands (`id`, `command`, `purpose`, `required`, `reason`)
 
@@ -802,42 +817,48 @@ Every entry in `tools` carries an explicit `containment_class` from the closed L
 Package `internal/toolchain` (`internal/toolchain/launcher.go`) exposes Go library APIs (not CLI subcommands) for Level 1 auditing and provisioning:
 
 * `WriteToolchainManifest(rootPath string, manifest *ToolchainManifest) error`: Go API that validates all `tools` and `host_prerequisites` containment rules, rejects `unsupported` or `non-conformant` classes and path-traversal or symlink escapes, and atomically writes `.backlogit/toolchain.yaml` (or `.backlog/toolchain.yaml`)
-* `RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte, error)`: Go API that validates the manifest and renders deterministic `.mcp.json` JSON binding local stdio servers to `./bin/...` executables and workspace-scoped arguments/environment variables
+* `RenderPinnedMCPConfig(rootPath string, manifest *ToolchainManifest) ([]byte, error)`: Go API that validates the manifest and renders deterministic `.mcp.json` JSON binding local stdio servers to their declared workspace-local pinned executables (such as `./.bin/...`, `./bin/...`, or another configured `tools_dir`) and workspace-scoped arguments/environment variables
 * `VerifyLauncherScripts(rootPath string) ([]ToolVerificationFinding, error)`: statically inspects `.mcp.json`, `start.ps1`, and `start.sh` for workspace-local pinning, terminating missing-file checks, workspace-scoped `COPILOT_HOME`/`ENGRAM_DATA_DIR`, and absence of ambient `PATH` lookups (`Get-Command`, `command -v`)
+* `VerifyProposedLauncherScripts(rootPath string, m *ToolchainManifest, startPS1, startSH []byte) ([]ToolVerificationFinding, error)`: statically validates proposed in-memory `start.ps1` and `start.sh` launcher bytes against a proposed `ToolchainManifest` without reloading `toolchain.yaml` or launcher files from disk
 * `AuditRepositoryToolchain(ctx context.Context, rootPath string) (*ToolchainVerificationReport, error)`: combines inventory, MCP config, and launcher verification into a single report
 
-Use these CLI commands to prewarm the multi-session daemon and audit workspace pinning:
+Use these CLI commands to bootstrap workspace binaries, prewarm the multi-session daemon, and audit workspace pinning:
 
 ```text
+backlogit init --tools-dir .bin
+backlogit install --tools-dir .bin
 backlogit mcp prewarm --format json
 backlogit mcp status --toolchain --format json
 backlogit mcp status --toolchain --strict --format json
 ```
 
+* `backlogit init [--tools-dir <dir>]` (new `.backlog/` workspace) and `backlogit install [--tools-dir <dir>]` (existing `.backlog/` or `.backlogit/` workspace, or `BACKLOGIT_WORKSPACE_DIR` override) create or target the workspace storage root, install `backlogit[.exe]` into the storage directory, run a rollback-protected tools-directory installation transaction (capturing pre-images for tools-dir binary, `.mcp.json`, manifest, and launcher writes while updating `mcpServers.backlogit` in `.mcp.json` and, when `toolchain.yaml` exists, reconciling `tools_dir`, `backlogit` `executable_path`/`sha256`, and `start.ps1`/`start.sh` verified via `VerifyProposedLauncherScripts`), and add literal-escaped ignore entries to `.gitignore` (and to `.git/info/exclude` when `.git` and `.git/info` exist as directories; skipped in linked worktrees where `.git` is a file). Storage binary installation and ignore-file updates execute separately outside that rollback transaction.
+* When `--tools-dir` is omitted, `backlogit init` and `backlogit install` select the default via `defaultTargetToolsDir` using the 5-source precedence (`.mcp.json` -> `toolchain.yaml` -> `config.yaml` -> `.bin` default -> `bin` fallback when `bin/` exists and `.bin/` is absent). `resolveInitTargetToolsDir` prompts when `--jsonrpc` is inactive on an interactive terminal, pipe, or non-empty regular-file stdin. Pass `--tools-dir <dir>` or `--jsonrpc` in non-interactive and agent workflows.
+* `backlogit init`, `backlogit install`, `backlogit mcp prewarm`, and `backlogit mcp status --toolchain [--strict]` are CLI-only bootstrap and audit commands; connected MCP sessions inspect workspace catalog metadata and tool surfaces via `backlogit_get_metadata_catalog`.
 * `backlogit mcp prewarm` starts or attaches to the workspace background MCP daemon before client sessions connect.
 * `backlogit mcp status --toolchain` reports daemon status together with the nested `"toolchain"` `ToolchainVerificationReport` object (`valid`, `violations`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, and `host_prerequisites`).
 * `backlogit mcp status --toolchain --strict` (or `--strict` alone, which implies `--toolchain`) writes the full report and exits non-zero (wrapped validation error) when `violations > 0`.
 
 ### Operator-Owned Verified Workspace Toolchain Setup, Provisioning, and Custody Alignment Procedure
 
-Follow this four-step procedure to provision and verify a workspace-local Level 1 toolchain:
+Follow this four-step procedure to provision and verify a workspace-local Level 1 toolchain. New workspaces default to `.bin` (with `bin` fallback when `bin/` exists and `.bin/` is absent for `--tools-dir` target selection, or when `.bin/backlogit[.exe]` is absent for MCP daemon attachment); the example paths below reflect an explicit `bin` layout such as this repository's committed `.backlogit/toolchain.yaml`:
 
 1. **Confirm Ownership and Gitignore / Custody Boundary**:
    * Tracked repository artifacts (`schemas/workspace-toolchain.schema.json`, `internal/toolchain/*.go`, `.backlogit/toolchain.yaml`, and documentation under `docs/`) are committed in the repository.
-   * Tracked/unignored launcher and dependency inputs remain under operator custody (`start.ps1`, `start.sh`, `.gitignore`, `tools/mcp/package.json`, `tools/mcp/bun.lock`, and `tools/mcp/install.ps1`), while local runtime artifacts remain gitignored (`./bin/*.exe`, `.copilot/graphtor-mcp-shim.cjs`, `tools/mcp/node_modules/`, and `.mcp.json`).
+   * Tracked/unignored launcher and dependency inputs remain under operator custody (`start.ps1`, `start.sh`, `.gitignore`, `tools/mcp/package.json`, `tools/mcp/bun.lock`, and `tools/mcp/install.ps1`), while local runtime artifacts remain gitignored (`./.bin/*.exe` or `./bin/*.exe` matching the workspace `tools_dir`, `.copilot/graphtor-mcp-shim.cjs`, `tools/mcp/node_modules/`, and `.mcp.json`).
 2. **Verify Per-Tool Source, Checksums, Lockfile Provenance, and Workspace Binding**:
-   * `backlogit` (`workspace-local-pinned`): build from repository source (`go build -o ./bin/backlogit.exe ./cmd/backlogit`), record its executable SHA-256 in `.backlogit/toolchain.yaml`, invoke as `./bin/backlogit.exe mcp --cwd <workspace>` in `.mcp.json`, and ensure both `start.ps1` and `start.sh` use workspace-anchored paths, terminating missing-file checks, workspace-scoped `COPILOT_HOME` and `ENGRAM_DATA_DIR`, and straight-line syntax without ambient `PATH` lookups.
+   * `backlogit` (`workspace-local-pinned`): install via `backlogit init` / `backlogit install --tools-dir <dir>` or build from repository source (`go build -o ./bin/backlogit.exe ./cmd/backlogit` for an explicit `bin` layout, or `./.bin/backlogit.exe` for the `.bin` default), record its executable SHA-256 in `toolchain.yaml`, invoke it with `--cwd <workspace>` in `.mcp.json`, and ensure both `start.ps1` and `start.sh` use workspace-anchored paths, terminating missing-file checks, workspace-scoped `COPILOT_HOME` and `ENGRAM_DATA_DIR`, and straight-line syntax without ambient `PATH` lookups.
    * `engram` (`workspace-local-pinned`): provision `./bin/engram.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, bind `ENGRAM_DATA_DIR=.engram`, and invoke `./bin/engram.exe shim` in `.mcp.json`.
    * `bun` and `bunx` (`workspace-local-pinned`): provision `./bin/bun.exe` and `./bin/bunx.exe`, pin their versions, executable SHA-256 checksums, and `entrypoint_path: "./tools/mcp/install.ps1"` in `.backlogit/toolchain.yaml`, and isolate caches via `BUN_INSTALL=<workspace>/bin/bun`, `BUN_INSTALL_CACHE_DIR=<workspace>/bin/bun-cache`, and `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0`.
-   * `context7` and `tavily` (`workspace-local-pinned`): pin versions in `tools/mcp/package.json` and `tools/mcp/bun.lock`, ensure `tools/mcp/install.ps1` resolves `$binDirectory = Join-Path $workspaceRoot "bin"` (not `.bin`), and run `pwsh -NoProfile -File tools/mcp/install.ps1` (`./bin/bun.exe install --cwd tools/mcp --frozen-lockfile --ignore-scripts --backend copyfile --no-progress`).
+   * `context7` and `tavily` (`workspace-local-pinned`): pin versions in `tools/mcp/package.json` and `tools/mcp/bun.lock`, ensure `tools/mcp/install.ps1` matches Bun's pinned `executable_path` directory (`$binDirectory = Join-Path $workspaceRoot "bin"` alongside `./bin/bun.exe` in this repository's `bin` layout; custom layouts must keep `install.ps1` aligned with Bun's pinned `executable_path` in `toolchain.yaml`), and run `pwsh -NoProfile -File tools/mcp/install.ps1` (`./bin/bun.exe install --cwd tools/mcp --frozen-lockfile --ignore-scripts --backend copyfile --no-progress`).
    * `github` (`workspace-local-pinned`): provision `./bin/github-mcp-server.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, and invoke `["stdio"]` in `.mcp.json`.
    * `graphtor-docs` (`workspace-local-pinned`): provision `./bin/kbdb.exe`, pin its version and executable SHA-256 in `.backlogit/toolchain.yaml`, and invoke `"./bin/kbdb.exe"` with `["serve"]` in `.mcp.json` (extra hyphen-prefixed flags beyond `--cwd` or `--script=` are rejected by `ValidateMCPConfigPinning`).
    * `graphtor-mcp-shim` (`workspace-local-pinned`, `kind: "tool"`): provision `.copilot/graphtor-mcp-shim.cjs` paired with `executable_path: "./bin/bun.exe"`, its pinned version, and the `bun.exe` SHA-256 in `.backlogit/toolchain.yaml`.
    * `built-in-host` (`agent-host` inside `tools`) and `host_prerequisites` (`pwsh`, `bash`, `git`, `gh`, `go`, `copilot` in the top-level `host_prerequisites` array): declare each entry explicitly in `.backlogit/toolchain.yaml`.
 3. **Align `.mcp.json` with `RenderPinnedMCPConfig`**:
-   * Use the `RenderPinnedMCPConfig` Go helper in `internal/toolchain` (or mirror its exact schema in `.mcp.json`) so every local MCP server `"command"` targets `./bin/...` with workspace-contained arguments (`["mcp", "--cwd", "<workspace>"]` for `backlogit`) and environment variables without ambient `PATH` resolution.
+   * Use the `RenderPinnedMCPConfig` Go helper in `internal/toolchain` (or `backlogit init` / `backlogit install --tools-dir` for `backlogit` itself, or mirror the exact schema in `.mcp.json`) so every local MCP server `"command"` targets its pinned workspace-local executable (under `./.bin/...`, `./bin/...`, or the declared `tools_dir`) with workspace-contained arguments (`["mcp", "--cwd", "<workspace>"]` for `backlogit`) and environment variables without ambient `PATH` resolution.
 4. **Run the Runtime Acceptance Check**:
-   * Execute the strict audit against the provisioned workspace and confirm zero violations:
+   * Execute the strict audit against the provisioned workspace (using `./.bin/backlogit.exe` for `.bin` default workspaces or `./bin/backlogit.exe` for an explicit `bin` layout) and confirm zero violations:
 
 ```powershell
 ./bin/backlogit.exe mcp status --toolchain --strict --format json

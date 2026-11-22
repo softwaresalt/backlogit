@@ -28,6 +28,7 @@ import (
 
 	"github.com/softwaresalt/backlogit/internal/config"
 	"github.com/softwaresalt/backlogit/internal/core"
+	corerrors "github.com/softwaresalt/backlogit/internal/errors"
 )
 
 const u3Wait = 5 * time.Second
@@ -814,5 +815,262 @@ func TestU3a_CloseAllSessionsPreservesCoordinatorAndCloseCoordinatorDrains(t *te
 		releaseOnce.Do(func() { close(release) })
 		u3Await(t, c.done, "blocked session detached")
 		require.NoError(t, u3Receive(t, shutdownDone, "Shutdown after session drain"))
+	})
+}
+
+type osSessionPathValidator interface {
+	validateSessionPathForOS(path, goos string) error
+}
+
+// asOSPathValidator resolves the package-internal validateSessionPathForOS seam
+// on a server value. Using a generic helper with any(v) is an explicit, justified
+// exception to the avoid-any anti-pattern so TestU1 compiles cleanly at baseSHA
+// before (*Server).validateSessionPathForOS is declared, while failing runtime
+// assertions cleanly under redhonesty rather than causing a compile error.
+func asOSPathValidator[T any](v T) (osSessionPathValidator, bool) {
+	u, ok := any(v).(osSessionPathValidator)
+	return u, ok
+}
+
+func u1ServerAt(t *testing.T, root string) *Server {
+	t.Helper()
+	storage := filepath.Join(root, ".backlogit")
+	require.NoError(t, os.MkdirAll(storage, 0o755))
+	require.NoError(t, config.WriteDefaults(storage))
+	ws, err := core.NewWorkspace(t.Context(), root)
+	require.NoError(t, err)
+	s := NewServer(ws)
+	s.NoUpdateCheck = true
+	t.Cleanup(func() {
+		assert.NoError(t, s.CloseAllSessions())
+		assert.NoError(t, s.coordinator.Close())
+		assert.NoError(t, ws.Close())
+	})
+	return s
+}
+
+func u1LinkDir(t *testing.T, linkPath, targetDir string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		out, err := exec.CommandContext(t.Context(), "cmd", "/c", "mklink", "/J", linkPath, targetDir).CombinedOutput()
+		require.NoError(t, err, "non-skippable Windows junction fixture %q -> %q: %s", linkPath, targetDir, out)
+	} else {
+		require.NoError(t, os.Symlink(targetDir, linkPath))
+	}
+	info, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	linked, err := core.IsSymlinkOrReparsePoint(info, linkPath)
+	require.NoError(t, err)
+	require.True(t, linked, "fixture link %q must report symlink/reparse status", linkPath)
+}
+
+// TestU1_ValidateSessionPathMixedAndForwardSeparators gates 220.001-T (U1).
+func TestU1_ValidateSessionPathMixedAndForwardSeparators(t *testing.T) {
+	const seedDoc = "---\ndoc_type: guide\nsource: docs/seed.md\nchunk_strategy: h1-h2-h3\nschema_version: \"1.0\"\ntitle: Seed\n---\n\n# Seed\n"
+
+	t.Run("dotdot_traversal_cross_os", func(t *testing.T) {
+		base := t.TempDir()
+		wsRoot := filepath.Join(base, "ws")
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "sub", "inner"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "docs"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "existing.md"), []byte("root"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "sub", "existing.md"), []byte("sub"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "docs", "seed.md"), []byte(seedDoc), 0o600))
+
+		s := u1ServerAt(t, wsRoot)
+		u3RequireDispatcher(t, s)
+
+		commonRejected := []string{
+			"",
+			"docs/\x00bad.md",
+			"sub/../existing.md",
+			"sub/inner\\..\\existing.md",
+			"sub\\../existing.md",
+			"../escape.md",
+			"/abs/escape.md",
+			"\\abs\\escape.md",
+			"\\\\server\\share\\file.md",
+			"//server/share/file.md",
+		}
+		windowsRejected := []string{
+			"C:relative.md",
+			"C:/abs.md",
+			"./C:relative.md",
+			"docs/seed.md:stream",
+			"docs/NUL.txt",
+			"docs/NUL:stream",
+			"docs/CONIN$",
+			"docs/CONOUT$",
+			"docs/COM\u00b9",
+			"docs/LPT\u00b2",
+		}
+
+		for _, p := range commonRejected {
+			gotErr := s.validateSessionPath(p)
+			assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail validation", p)
+		}
+		if runtime.GOOS == "windows" {
+			for _, p := range windowsRejected {
+				gotErr := s.validateSessionPath(p)
+				assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail validation on Windows", p)
+			}
+		}
+
+		osValidator, hasOSValidator := asOSPathValidator(s)
+		if assert.True(t, hasOSValidator, "*Server must implement validateSessionPathForOS(path, goos string) error") {
+			assert.ErrorIs(t, osValidator.validateSessionPathForOS("docs/seed.md", ""), corerrors.ErrValidation, "validateSessionPathForOS with empty goos must fail validation")
+			assert.ErrorIs(t, osValidator.validateSessionPathForOS("docs/seed.md", "   "), corerrors.ErrValidation, "validateSessionPathForOS with whitespace goos must fail validation")
+			for _, p := range commonRejected {
+				winErr := osValidator.validateSessionPathForOS(p, "windows")
+				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail validation", p)
+				linuxErr := osValidator.validateSessionPathForOS(p, "linux")
+				assert.ErrorIs(t, linuxErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, linux) must fail validation", p)
+			}
+			for _, p := range windowsRejected {
+				winErr := osValidator.validateSessionPathForOS(p, "windows")
+				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail validation", p)
+			}
+		}
+
+		c := u3Start(t, s, "u1-dotdot")
+		u3Initialize(t, c)
+		u3Call(t, c, "2", "backlogit_docs_lint", map[string]any{"path": "sub/../docs/seed.md"})
+		msg := u3Response(t, c, "2")
+		toolRes := u3ToolResult(t, msg)
+		assert.True(t, toolRes.IsError, "ServeSessionStream must reject sub/../docs/seed.md")
+		assert.Contains(t, toolRes.Content[0].Text, "validation_failed")
+	})
+
+	t.Run("reparse_ancestors", func(t *testing.T) {
+		base := t.TempDir()
+		wsRoot := filepath.Join(base, "ws")
+		extDir := filepath.Join(base, "ext")
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "docs"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "nested"), 0o755))
+		require.NoError(t, os.MkdirAll(extDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "docs", "seed.md"), []byte(seedDoc), 0o600))
+
+		const externalMarker = "U1_EXTERNAL_SECRET"
+		secretPath := filepath.Join(extDir, "secret.md")
+		require.NoError(t, os.WriteFile(secretPath, []byte(externalMarker), 0o600))
+
+		u1LinkDir(t, filepath.Join(wsRoot, "junction"), extDir)
+		u1LinkDir(t, filepath.Join(wsRoot, "nested", "junction"), extDir)
+
+		s := u1ServerAt(t, wsRoot)
+		u3RequireDispatcher(t, s)
+
+		reparsePaths := []string{
+			"junction/missing.md",
+			"junction/",
+			"nested/junction/missing.md",
+			"nested\\junction/missing.md",
+		}
+		windowsReparseProbes := []string{
+			"junction.",
+			"junction ",
+			"junction./missing.md",
+			"junction /missing.md",
+			"nested/junction./missing.md",
+			"nested/junction /missing.md",
+		}
+
+		for _, p := range reparsePaths {
+			gotErr := s.validateSessionPath(p)
+			assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail closed on reparse ancestor", p)
+		}
+		if runtime.GOOS == "windows" {
+			for _, p := range windowsReparseProbes {
+				gotErr := s.validateSessionPath(p)
+				assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail closed on Windows trailing-dot/space reparse probe", p)
+			}
+		}
+
+		osValidator, hasOSValidator := asOSPathValidator(s)
+		if assert.True(t, hasOSValidator, "*Server must implement validateSessionPathForOS(path, goos string) error") {
+			for _, p := range reparsePaths {
+				winErr := osValidator.validateSessionPathForOS(p, "windows")
+				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail closed on reparse ancestor", p)
+			}
+			for _, p := range windowsReparseProbes {
+				winErr := osValidator.validateSessionPathForOS(p, "windows")
+				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail closed on Windows trailing-dot/space reparse probe", p)
+			}
+		}
+
+		c := u3Start(t, s, "u1-reparse")
+		u3Initialize(t, c)
+
+		u3Call(t, c, "2", "backlogit_docs_lint", map[string]any{"path": "junction/../docs/seed.md"})
+		lintMsg := u3Response(t, c, "2")
+		lintRes := u3ToolResult(t, lintMsg)
+		assert.True(t, lintRes.IsError, "ServeSessionStream must reject junction/../docs/seed.md")
+		assert.Contains(t, lintRes.Content[0].Text, "validation_failed")
+
+		u3Call(t, c, "3", "backlogit_export_command_map", map[string]any{"path": "junction/../cmdmap.md"})
+		cmdMapEscapeMsg := u3Response(t, c, "3")
+		cmdMapEscapeRes := u3ToolResult(t, cmdMapEscapeMsg)
+		assert.True(t, cmdMapEscapeRes.IsError, "ServeSessionStream must reject junction/../cmdmap.md")
+		assert.Contains(t, cmdMapEscapeRes.Content[0].Text, "validation_failed")
+
+		u3Call(t, c, "4", "backlogit_export_command_map", map[string]any{"path": "junction/missing.md"})
+		cmdMapDirectMsg := u3Response(t, c, "4")
+		cmdMapDirectRes := u3ToolResult(t, cmdMapDirectMsg)
+		assert.True(t, cmdMapDirectRes.IsError, "ServeSessionStream must reject junction/missing.md")
+		assert.Contains(t, cmdMapDirectRes.Content[0].Text, "validation_failed")
+
+		_, cmdMapStatErr := os.Stat(filepath.Join(wsRoot, "cmdmap.md"))
+		assert.ErrorIs(t, cmdMapStatErr, os.ErrNotExist, "rejected export_command_map must not write inside workspace")
+		_, outsideStatErr := os.Stat(filepath.Join(extDir, "missing.md"))
+		assert.ErrorIs(t, outsideStatErr, os.ErrNotExist, "rejected export_command_map must not write outside workspace")
+		secretBytes, readErr := os.ReadFile(secretPath)
+		require.NoError(t, readErr)
+		assert.Equal(t, externalMarker, string(secretBytes))
+	})
+
+	t.Run("clean_relative_paths", func(t *testing.T) {
+		base := t.TempDir()
+		wsRoot := filepath.Join(base, "ws")
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, "docs"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(wsRoot, ".backlogit", "queue"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, "docs", "seed.md"), []byte(seedDoc), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wsRoot, ".backlogit", "queue", "001-F.md"), []byte("---\nid: 001-F\n---\n"), 0o600))
+
+		s := u1ServerAt(t, wsRoot)
+
+		cleanPaths := []string{
+			".",
+			".backlogit/queue/001-F.md",
+			".backlogit\\queue\\001-F.md",
+			"docs/nonexistent.md",
+			"docs//seed.md",
+		}
+
+		for _, p := range cleanPaths {
+			assert.NoError(t, s.validateSessionPath(p), "validateSessionPath(%q) must allow clean relative path", p)
+		}
+
+		osValidator, hasOSValidator := asOSPathValidator(s)
+		if assert.True(t, hasOSValidator, "*Server must implement validateSessionPathForOS(path, goos string) error") {
+			for _, p := range cleanPaths {
+				assert.NoError(t, osValidator.validateSessionPathForOS(p, "windows"), "validateSessionPathForOS(%q, windows) must allow clean path", p)
+				assert.NoError(t, osValidator.validateSessionPathForOS(p, "linux"), "validateSessionPathForOS(%q, linux) must allow clean path", p)
+			}
+		}
+
+		t.Chdir(base)
+		relSrv := u1ServerAt(t, wsRoot)
+		relSrv.RootPath = "ws"
+		require.False(t, filepath.IsAbs(relSrv.RootPath), "relative RootPath fixture must stay relative")
+
+		for _, p := range cleanPaths {
+			assert.NoError(t, relSrv.validateSessionPath(p), "relative RootPath validateSessionPath(%q) must succeed", p)
+		}
+		if relValidator, hasRelValidator := asOSPathValidator(relSrv); assert.True(t, hasRelValidator, "*Server must implement validateSessionPathForOS(path, goos string) error") {
+			for _, p := range cleanPaths {
+				assert.NoError(t, relValidator.validateSessionPathForOS(p, "windows"))
+				assert.NoError(t, relValidator.validateSessionPathForOS(p, "linux"))
+			}
+		}
 	})
 }
