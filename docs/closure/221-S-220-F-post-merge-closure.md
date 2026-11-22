@@ -48,7 +48,7 @@ See [post-merge runtime verification](221-S-post-merge-runtime-verification.md) 
 | Deployment / rollout path | Merge-only MCP path validation fix, cross-OS unit tests, and configuration/design documentation |
 | Pre-deploy audit | All `8/8` CI checks on PR `#670`, `go vet ./...`, CI-pinned `golangci-lint@v1.64.8`, governed `079-DL`/`105-DL`/`106-DL` `gofmt -l cmd internal tests scripts`, `EXEMPT_VERIFY_OK:220.002-T`, `markdownlint-cli2`, `backlogit_docs_lint`, and `GOTOOLCHAIN=go1.24.0 go test -timeout=30m -p 1 ./...` passed |
 | Post-deploy checks | `go build ./cmd/backlogit`, `TestU1_ValidateSessionPathMixedAndForwardSeparators` (`-race`), `mcp status --format json`, and `docs lint` (`authoring` + `ingestion`) passed on synchronized `main` |
-| Risky action: governed safe-close | `ActionRisk: destructive`; authorized via dark-mode closure; `ActionResult: applied` (`shipment_status: shipped`, `returned_ids: []`) |
+| Risky action: governed safe-close | `ActionRisk: moderate`; governed non-destructive archival of explicit completed shipment members authorized by `P-015` closure protocol; `ActionResult: applied` (`shipment_status: shipped`, `returned_ids: []`) |
 
 ## Monitoring plan, owner, and rollback
 
@@ -56,7 +56,7 @@ See [post-merge runtime verification](221-S-post-merge-runtime-verification.md) 
 * **Validation window**: Immediate post-merge checks (passed) plus 7-day observation window (`2026-11-22` through `2026-11-29`).
 * **Healthy signals**: `TestU1_ValidateSessionPathMixedAndForwardSeparators` green in Ubuntu CI (`test` job) and in local Windows `-race` post-merge verification (`221-S-post-merge-runtime-verification.md`; note CI `test-windows` runs `ItemLog|ShipmentReconcile` only); `backlogit docs lint` reports `0` violations; `ServeSessionStream` rejects mixed-separator and junction traversal attempts on ID-bearing `tools/call` requests with `validation_failed` (remaining missing/null `envelope.ID` bypass tracked in `272A805F`).
 * **Failure signals / rollback trigger**: Any `validateSessionPath` regression breaking valid workspace-relative MCP paths or failing containment on Windows/POSIX hosts.
-* **Rollback procedure**: Preserve `.backlogit/archive/` history and PR `#670` memory checkpoints (`docs/memory/2026-11-21/221-s-*` referenced by compaction), and submit an operator-approved revert PR using `git revert -m 1 --no-commit a079f4527a9243413ea992ad0701225fac722cc5`, restoring `.backlogit/archive/` and `docs/memory/2026-11-21/221-s-*` from pre-revert `HEAD` before committing so only runtime, test, and operator-documentation changes are reverted.
+* **Rollback procedure**: Preserve `.backlogit/archive/` history and PR `#670` memory checkpoints (`docs/memory/2026-11-21/221-s-*` referenced by compaction), and submit an operator-approved revert PR using `git revert -m 1 --no-commit a079f4527a9243413ea992ad0701225fac722cc5`, then `git restore --source=HEAD --staged --worktree -- .backlogit/archive/ docs/memory/2026-11-21/221-s-*` and verify `git diff --cached --name-only` contains only the intended runtime, test, and operator-documentation changes before committing.
 
 ## Source artifact provenance
 
