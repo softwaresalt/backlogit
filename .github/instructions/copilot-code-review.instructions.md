@@ -48,7 +48,7 @@ below through deterministic gates, linters, and policies. De-prioritize ONLY the
 purely mechanical, process, or style nits so review attention stays on substantive
 defects:
 
-* Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
+* Go formatting, linting, and vet mechanics (`gofmt -l cmd internal tests scripts`, `golangci-lint run`, `go vet ./...`)
 * Workflow policies P-001 through P-021 and constitutional principle sequencing
 * Test-first red-green gate mechanics (P-002, P-004) and the `go test -timeout=30m ./...` suite run
 * Merge-commit-only discipline (P-009, Principle XI) — squash and rebase are forbidden
