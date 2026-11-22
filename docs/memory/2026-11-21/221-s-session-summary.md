@@ -15,8 +15,6 @@ docline:
 ## Durable Summary
 
 * **Shipment / Feature**: `221-S` / `220-F` on branch `feat/221-s` (from `main` `329e2577e98a6dd2ae751c76f1372f726d15d01e`)
-* **Routing Degradation Notice (`P-013.5`)**: `ROUTING_DEGRADED: context_tier` recorded at Ship session start; non-blocking, proceeded at default context.
-* **Index Pack Degradation (`[PACK-ROUTING]`)**: `ENGRAM_DEGRADED` (daemon readiness timeout); used direct git/file discovery fallback.
 
 ## Decisions and Outcomes
 
