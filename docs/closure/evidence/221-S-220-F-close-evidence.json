@@ -19,8 +19,8 @@
     "reconcile_report": ".backlogit/reconcile/221-S-pre-20261122T025740Z.md",
     "manifest_members": [
       { "id": "220-F", "artifact_type": "feature", "location": "queue", "declared_status": "active", "classification": "feature-pending-governed-completion" },
-      { "id": "220.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived" },
-      { "id": "220.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived" }
+      { "id": "220.001-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived", "note": "auto-relocated to archive on done; finalized to archived_status=done by ship_shipment" },
+      { "id": "220.002-T", "artifact_type": "task", "location": "archive", "declared_status": "done", "parent_id": "220-F", "classification": "pre-archived", "note": "auto-relocated to archive on done; finalized to archived_status=done by ship_shipment" }
     ],
     "recommendation": "PROCEED"
   },
