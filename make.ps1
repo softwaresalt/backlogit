@@ -44,7 +44,7 @@ function Step([string]$Name, [scriptblock]$Cmd) {
 switch ($Target) {
 
     "all" {
-        Step "fmt"  { $bad = gofmt -l .; if ($bad) { Write-Host $bad; exit 1 } }
+        Step "fmt"  { $bad = gofmt -l cmd internal tests scripts; if ($bad) { Write-Host $bad; exit 1 } }
         Step "vet"  { go vet ./... }
         Step "lint" { golangci-lint run --timeout 5m }
         Step "test" { go test -race -coverprofile=coverage.out ./... }
@@ -75,7 +75,7 @@ switch ($Target) {
 
     "fmt" {
         Step "fmt" {
-            $bad = gofmt -l .
+            $bad = gofmt -l cmd internal tests scripts
             if ($bad) { Write-Host $bad -ForegroundColor Yellow; exit 1 }
             Write-Host "All files formatted." -ForegroundColor Green
         }
