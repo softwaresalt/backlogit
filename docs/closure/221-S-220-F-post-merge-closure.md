@@ -20,7 +20,7 @@ docline:
 
 ## Release and governed scope
 
-PR `#670` (`https://github.com/softwaresalt/backlogit/pull/670`, `headRefOid: 9c750ba2833abb58444e4f896c36d78d56c4520c`) passed current-HEAD local `Adversarial Review` (`mode: report-only` -> `READY`, `P0=0`, `0` HIGH/MEDIUM P0/P1) + `Correctness Reviewer` (`READY`, `0` findings), `8/8` CI checks, P-018 `gsd gate copilot-review 670` (`PASS`, `0` unresolved blocking, `0` advisory, `0` resolved, Copilot review body `6009796844` approval recommended with zero issues), and P-009 merge-commit-only settings, merging via commit `a079f4527a9243413ea992ad0701225fac722cc5` at `2026-11-22T02:50:59Z`.
+PR `#670` (`https://github.com/softwaresalt/backlogit/pull/670`, `headRefOid: 9c750ba2833abb58444e4f896c36d78d56c4520c`) passed current-HEAD local `Adversarial Review` (`mode: report-only` -> `READY`, `0` HIGH/MEDIUM P0/P1) + `Correctness Reviewer` (`READY`, `0` findings) — producing Ship gate verdict `READY_WITH_FOLLOWUPS` (`P0=0, P1=0` blocking, 5 pre-existing P-021 C2 follow-ups) — `8/8` CI checks, P-018 `gsd gate copilot-review 670` (`PASS`, `0` unresolved blocking, `0` advisory, `0` resolved, Copilot review body `6009796844` approval recommended with zero issues), and P-009 merge-commit-only settings, merging via commit `a079f4527a9243413ea992ad0701225fac722cc5` at `2026-11-22T02:50:59Z`.
 
 Local `main` was synchronized via fast-forward-only sync (`HEAD == origin/main == a079f4527a9243413ea992ad0701225fac722cc5`) before creating `post-merge/221-s-closure`. Lifecycle topology gate returned `CARRY_FORWARD_ELIGIBLE` (`exit_code: 0`).
 
@@ -56,21 +56,21 @@ See [post-merge runtime verification](221-S-post-merge-runtime-verification.md) 
 * **Validation window**: Immediate post-merge checks (passed) plus 7-day observation window (`2026-11-22` through `2026-11-29`).
 * **Healthy signals**: `TestU1_ValidateSessionPathMixedAndForwardSeparators` green in Ubuntu CI (`test` job) and in local Windows `-race` post-merge verification (`221-S-post-merge-runtime-verification.md`; note CI `test-windows` runs `ItemLog|ShipmentReconcile` only); `backlogit docs lint` reports `0` violations; `ServeSessionStream` rejects mixed-separator and junction traversal attempts on ID-bearing `tools/call` requests with `validation_failed` (remaining missing/null `envelope.ID` bypass tracked in `272A805F`).
 * **Failure signals / rollback trigger**: Any `validateSessionPath` regression breaking valid workspace-relative MCP paths or failing containment on Windows/POSIX hosts.
-* **Rollback procedure**: Preserve `.backlogit/archive/` history and PR `#670` memory checkpoints (`docs/memory/2026-11-21/221-s-*` referenced by compaction), and submit an operator-approved `git revert -m 1 a079f4527a9243413ea992ad0701225fac722cc5` PR reverting runtime, test, and operator-documentation changes.
+* **Rollback procedure**: Preserve `.backlogit/archive/` history and PR `#670` memory checkpoints (`docs/memory/2026-11-21/221-s-*` referenced by compaction), and submit an operator-approved revert PR using `git revert -m 1 --no-commit a079f4527a9243413ea992ad0701225fac722cc5`, restoring `.backlogit/archive/` and `docs/memory/2026-11-21/221-s-*` from pre-revert `HEAD` before committing so only runtime, test, and operator-documentation changes are reverted.
 
 ## Source artifact provenance
 
-Feature `220-F` records `source_stash_id: 39F868B1` and `source_deliberation_id: 105-DL` (archived `.backlogit/archive/105-DL.md`); Task `220.002-T` records `source_stash_id: EF372865` and `source_deliberation_id: 106-DL` (archived `.backlogit/archive/106-DL.md`). Source stash entries `39F868B1` and `EF372865` and deliberations `105-DL` and `106-DL` were left untouched by `221-S` closure as provenance only.
+Feature `220-F` records `source_stash_id: 39F868B1` and `source_deliberation_id: 105-DL` (archived `.backlogit/archive/105-DL.md`); Task `220.002-T` records `source_stash_id: EF372865` and `source_deliberation_id: 106-DL` (archived `.backlogit/archive/106-DL.md`). Archived source stash entries `39F868B1` and `EF372865` in `.backlogit/archive/stash.jsonl` and deliberations `105-DL` and `106-DL` were left untouched by `221-S` closure as provenance only.
 
 ## Tracked residual risks, P-021 C2 deferrals, and follow-up stash entries
 
-Five pre-existing out-of-scope `P-021 C2` deferred scope expansions captured during `221-S` remain active in `.backlogit/stash.jsonl` for Stage triage (not mutated by Ship per P-021 C5 single-write capture invariant):
+Five pre-existing out-of-scope `P-021 C2` deferred scope expansions captured during `221-S` remain active in `.backlogit/stash.jsonl` for Stage triage (not mutated by Ship per P-021 C5 single-write capture invariant). Task-level P-021 C3 traceability comments were appended to local gitignored item logs (`.backlogit/logs/220.001-T.jsonl` and `.backlogit/logs/220.002-T.jsonl`) and are mirrored explicitly per task below:
 
-* **`DCE8FD71`**: Reject leading/trailing whitespace in `(*Server).validateSessionPathForOS` (`internal/mcp/session_mux.go`) instead of applying `strings.TrimSpace(path)`.
-* **`272A805F`**: Enforce `validateSessionPath` (or reject non-notification requests with missing/null `envelope.ID` before `s.mcp.HandleMessage`) in `(*Server).dispatchSessionFrame` (`internal/mcp/session_mux.go:213`).
-* **`5C70ECD0`**: Fail closed with `corerrors.ErrValidation` in `(*Server).validateSessionPathForOS` when `strings.TrimSpace(s.RootPath)` is empty instead of letting `filepath.Abs("")` resolve to CWD.
-* **`8827BED4`**: Update `u6BuildBinary` (`internal/cli/mcp_session_shim_test.go:392`, Windows path join at `:406`) on Windows to invoke `go build` directly instead of requiring gitignored `bin/tmp/212-go-env.ps1`.
-* **`A748BF57`**: Reconcile pre-existing `kbdb serve --read-only` instruction in `docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md:138` with `ValidateMCPConfigPinning` (`["serve"]` only) and `.backlogit/` workspace default wording in `docs/configuration.md:48`.
+* **`220.001-T` -> `DCE8FD71`**: Reject leading/trailing whitespace in `(*Server).validateSessionPathForOS` (`internal/mcp/session_mux.go`) instead of applying `strings.TrimSpace(path)`.
+* **`220.001-T` -> `272A805F`**: Enforce `validateSessionPath` (or reject non-notification requests with missing/null `envelope.ID` before `s.mcp.HandleMessage`) in `(*Server).dispatchSessionFrame` (`internal/mcp/session_mux.go:213`, superseding the captured `:207` line reference in `.backlogit/stash.jsonl`).
+* **`220.001-T` -> `5C70ECD0`**: Fail closed with `corerrors.ErrValidation` in `(*Server).validateSessionPathForOS` when `strings.TrimSpace(s.RootPath)` is empty instead of letting `filepath.Abs("")` resolve to CWD.
+* **`220.001-T` -> `8827BED4`**: Update `u6BuildBinary` (`internal/cli/mcp_session_shim_test.go:392`, Windows `filepath.Join` at `:408` inside `:407-408`, superseding the captured `:404` line reference in `.backlogit/stash.jsonl`) on Windows to invoke `go build` directly instead of requiring gitignored `bin/tmp/212-go-env.ps1`.
+* **`220.002-T` -> `A748BF57`**: Reconcile pre-existing `kbdb serve --read-only` instruction in `docs/design-docs/2026-11-04-multi-session-mcp-runtime-and-workspace-toolchain.md:138` with `ValidateMCPConfigPinning` (`internal/toolchain/types.go:102` / `validateMCPConfigPinning` at `internal/toolchain/verify.go:772`, superseding the captured `:933-938` line reference in `.backlogit/stash.jsonl`) and `.backlogit/` workspace default wording in `docs/configuration.md:48`.
 
 ## Knowledge refresh, P-020 compaction, and follow-ups
 
