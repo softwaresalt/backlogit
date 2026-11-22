@@ -889,11 +889,20 @@ func TestU1_ValidateSessionPathMixedAndForwardSeparators(t *testing.T) {
 			"../escape.md",
 			"/abs/escape.md",
 			"\\abs\\escape.md",
+			"\\\\server\\share\\file.md",
+			"//server/share/file.md",
 		}
 		windowsRejected := []string{
 			"C:relative.md",
 			"C:/abs.md",
+			"./C:relative.md",
+			"docs/seed.md:stream",
 			"docs/NUL.txt",
+			"docs/NUL:stream",
+			"docs/CONIN$",
+			"docs/CONOUT$",
+			"docs/COM\u00b9",
+			"docs/LPT\u00b2",
 		}
 
 		for _, p := range commonRejected {
@@ -909,6 +918,8 @@ func TestU1_ValidateSessionPathMixedAndForwardSeparators(t *testing.T) {
 
 		osValidator, hasOSValidator := asOSPathValidator(s)
 		if assert.True(t, hasOSValidator, "*Server must implement validateSessionPathForOS(path, goos string) error") {
+			assert.ErrorIs(t, osValidator.validateSessionPathForOS("docs/seed.md", ""), corerrors.ErrValidation, "validateSessionPathForOS with empty goos must fail validation")
+			assert.ErrorIs(t, osValidator.validateSessionPathForOS("docs/seed.md", "   "), corerrors.ErrValidation, "validateSessionPathForOS with whitespace goos must fail validation")
 			for _, p := range commonRejected {
 				winErr := osValidator.validateSessionPathForOS(p, "windows")
 				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail validation", p)
@@ -955,10 +966,24 @@ func TestU1_ValidateSessionPathMixedAndForwardSeparators(t *testing.T) {
 			"nested/junction/missing.md",
 			"nested\\junction/missing.md",
 		}
+		windowsReparseProbes := []string{
+			"junction.",
+			"junction ",
+			"junction./missing.md",
+			"junction /missing.md",
+			"nested/junction./missing.md",
+			"nested/junction /missing.md",
+		}
 
 		for _, p := range reparsePaths {
 			gotErr := s.validateSessionPath(p)
 			assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail closed on reparse ancestor", p)
+		}
+		if runtime.GOOS == "windows" {
+			for _, p := range windowsReparseProbes {
+				gotErr := s.validateSessionPath(p)
+				assert.ErrorIs(t, gotErr, corerrors.ErrValidation, "validateSessionPath(%q) must fail closed on Windows trailing-dot/space reparse probe", p)
+			}
 		}
 
 		osValidator, hasOSValidator := asOSPathValidator(s)
@@ -966,6 +991,10 @@ func TestU1_ValidateSessionPathMixedAndForwardSeparators(t *testing.T) {
 			for _, p := range reparsePaths {
 				winErr := osValidator.validateSessionPathForOS(p, "windows")
 				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail closed on reparse ancestor", p)
+			}
+			for _, p := range windowsReparseProbes {
+				winErr := osValidator.validateSessionPathForOS(p, "windows")
+				assert.ErrorIs(t, winErr, corerrors.ErrValidation, "validateSessionPathForOS(%q, windows) must fail closed on Windows trailing-dot/space reparse probe", p)
 			}
 		}
 

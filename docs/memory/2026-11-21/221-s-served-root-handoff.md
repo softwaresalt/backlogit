@@ -21,7 +21,7 @@ docline:
 * `manifest_path`: `.backlogit/queue/221-S.md` (`status: queued`, `3` explicit items `220-F`, `220.001-T`, `220.002-T`)
 * `index_path`: `.backlogit/backlogit.db`
 * `pre_claim_topology_gate`: `PASS` (`predecessor_provenance=explicit` via `220-S`, `worktree_cleanliness=CARRY_FORWARD_ELIGIBLE` at `main` `329e2577e98a6dd2ae751c76f1372f726d15d01e`)
-* `routing_note`: `ROUTING_DEGRADED: context_tier` (`gemini-4-hydrogen` runtime uses `default` context tier)
+* `routing_note`: `ROUTING_DEGRADED: context_tier` (non-blocking, proceeded at default context)
 
 ## Binding and branch
 

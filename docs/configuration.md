@@ -222,7 +222,9 @@ queue_layout:
   2. `<storage>/toolchain.yaml`: `backlogit` `executable_path` and/or top-level `tools_dir`
   3. `<storage>/config.yaml`: top-level `tools_dir`
   4. `.bin` default: `.bin/backlogit` (or `.bin/backlogit.exe` on Windows)
-  5. `bin` fallback: `bin/backlogit` (or `bin/backlogit.exe` on Windows) when `bin/` exists in the workspace and `.bin/` does not
+  5. `bin` fallback:
+     * `--tools-dir` default target selection (`defaultTargetToolsDir` in `internal/cli/mcp_daemon.go`): selects `bin` when `bin/` exists and `.bin/` is absent
+     * MCP daemon executable attachment (`pinnedMCPDaemonBinary` in `internal/cli/mcp_daemon.go`): probes `.bin/backlogit[.exe]` and falls back to `bin/backlogit[.exe]` on `os.ErrNotExist` (even if an empty `.bin/` directory exists)
 
 ### Hierarchy examples
 
@@ -830,8 +832,8 @@ backlogit mcp status --toolchain --format json
 backlogit mcp status --toolchain --strict --format json
 ```
 
-* `backlogit init [--tools-dir <dir>]` (new `.backlog/` workspace) and `backlogit install [--tools-dir <dir>]` (existing `.backlog/` or `.backlogit/` workspace, or `BACKLOGIT_WORKSPACE_DIR` override) create or target the workspace storage root, install `backlogit[.exe]` into both the storage directory and target tools directory with rollback on failure, add literal-escaped ignore entries to `.gitignore` and `.git/info/exclude`, write or update `mcpServers.backlogit` in `.mcp.json`, and when `toolchain.yaml` exists, reconcile `tools_dir`, `backlogit` `executable_path`/`sha256`, and `start.ps1`/`start.sh` references (verified via `VerifyProposedLauncherScripts` before writing).
-* When `--tools-dir` is omitted, `backlogit init` and `backlogit install` select the default using the 5-source precedence (`.mcp.json` -> `toolchain.yaml` -> `config.yaml` -> `.bin` default -> `bin` fallback when `bin/` exists and `.bin/` does not) and prompt only on interactive/pipe stdin when `--jsonrpc` is inactive. Pass `--tools-dir <dir>` or `--jsonrpc` in non-interactive and agent workflows.
+* `backlogit init [--tools-dir <dir>]` (new `.backlog/` workspace) and `backlogit install [--tools-dir <dir>]` (existing `.backlog/` or `.backlogit/` workspace, or `BACKLOGIT_WORKSPACE_DIR` override) create or target the workspace storage root, install `backlogit[.exe]` into the storage directory, run a rollback-protected tools-directory installation transaction (capturing pre-images for tools-dir binary, `.mcp.json`, manifest, and launcher writes while updating `mcpServers.backlogit` in `.mcp.json` and, when `toolchain.yaml` exists, reconciling `tools_dir`, `backlogit` `executable_path`/`sha256`, and `start.ps1`/`start.sh` verified via `VerifyProposedLauncherScripts`), and add literal-escaped ignore entries to `.gitignore` and `.git/info/exclude`. Storage binary installation and ignore-file updates execute separately outside that rollback transaction.
+* When `--tools-dir` is omitted, `backlogit init` and `backlogit install` select the default via `defaultTargetToolsDir` using the 5-source precedence (`.mcp.json` -> `toolchain.yaml` -> `config.yaml` -> `.bin` default -> `bin` fallback when `bin/` exists and `.bin/` is absent). `resolveInitTargetToolsDir` prompts when `--jsonrpc` is inactive on an interactive terminal, pipe, or non-empty regular-file stdin. Pass `--tools-dir <dir>` or `--jsonrpc` in non-interactive and agent workflows.
 * `backlogit init`, `backlogit install`, `backlogit mcp prewarm`, and `backlogit mcp status --toolchain [--strict]` are CLI-only bootstrap and audit commands; connected MCP sessions inspect workspace catalog metadata and tool surfaces via `backlogit_get_metadata_catalog`.
 * `backlogit mcp prewarm` starts or attaches to the workspace background MCP daemon before client sessions connect.
 * `backlogit mcp status --toolchain` reports daemon status together with the nested `"toolchain"` `ToolchainVerificationReport` object (`valid`, `violations`, `containment_level`, `os_container_sandbox_deferred`, `workspace_root`, `tools`, and `host_prerequisites`).
@@ -839,7 +841,7 @@ backlogit mcp status --toolchain --strict --format json
 
 ### Operator-Owned Verified Workspace Toolchain Setup, Provisioning, and Custody Alignment Procedure
 
-Follow this four-step procedure to provision and verify a workspace-local Level 1 toolchain. New workspaces default to `.bin` (with `bin` fallback when `bin/` exists and `.bin/` does not); the example paths below reflect an explicit `bin` layout such as this repository's committed `.backlogit/toolchain.yaml`:
+Follow this four-step procedure to provision and verify a workspace-local Level 1 toolchain. New workspaces default to `.bin` (with `bin` fallback when `bin/` exists and `.bin/` is absent for `--tools-dir` target selection, or when `.bin/backlogit[.exe]` is absent for MCP daemon attachment); the example paths below reflect an explicit `bin` layout such as this repository's committed `.backlogit/toolchain.yaml`:
 
 1. **Confirm Ownership and Gitignore / Custody Boundary**:
    * Tracked repository artifacts (`schemas/workspace-toolchain.schema.json`, `internal/toolchain/*.go`, `.backlogit/toolchain.yaml`, and documentation under `docs/`) are committed in the repository.

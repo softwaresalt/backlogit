@@ -81,13 +81,20 @@ short-circuiting invalid entries:
 2. `<storage>/toolchain.yaml` (`backlogit` `executable_path` and/or `tools_dir`)
 3. `<storage>/config.yaml` (`tools_dir`)
 4. `.bin` default (`.bin/backlogit[.exe]`)
-5. `bin` fallback (`bin/backlogit[.exe]` when `bin/` exists and `.bin/` is absent)
+5. `bin` fallback:
+   * `--tools-dir` default target selection (`defaultTargetToolsDir` in
+     `internal/cli/mcp_daemon.go`): selects `bin` when `bin/` exists and
+     `.bin/` is absent
+   * MCP daemon executable attachment (`pinnedMCPDaemonBinary` in
+     `internal/cli/mcp_daemon.go`): probes `.bin/backlogit[.exe]` and falls
+     back to `bin/backlogit[.exe]` on `os.ErrNotExist` (even if an empty `.bin/`
+     directory exists)
 
 `internal/toolchain` provides `LoadToolchainManifest`,
 `DefaultWorkspaceToolchainManifest`, `VerifyWorkspaceToolchain`, and
 `ValidateMCPConfigPinning` (`213-S`), plus `VerifyLauncherScripts`,
 `VerifyProposedLauncherScripts`, `AuditRepositoryToolchain`,
-`WriteToolchainManifest`, and `RenderPinnedMCPConfig` (`214-S`, `218-S`).
+`WriteToolchainManifest`, and `RenderPinnedMCPConfig` (`214-S`, `218-S`, `219-S`).
 Loading checks the selected `.backlog` or legacy `.backlogit` storage root; a
 missing manifest yields an unverified default inventory, not a successful
 pinning claim. Verification is read-only and reports findings and violations. It
@@ -118,7 +125,8 @@ overwrite them as a side effect of verification.
    `backlogit install --tools-dir <dir>`) and match its version to
    `version.Resolve()`. Put platform-appropriate binaries under the workspace
    tools directory (`.bin/` by default, `bin/` fallback when `bin/` exists and
-   `.bin/` does not, or an explicit `tools_dir` in `config.yaml` /
+   `.bin/` is absent for `--tools-dir` or on `os.ErrNotExist` for MCP daemon
+   attachment, or an explicit `tools_dir` in `config.yaml` /
    `toolchain.yaml` such as committed `bin/` pins), not a silent global `PATH`
    fallback.
 2. Pin Context7 and Tavily package versions and lockfile provenance in

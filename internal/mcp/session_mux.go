@@ -395,6 +395,9 @@ func (s *Server) validateSessionPathForOS(path, goos string) (result error) {
 	if s == nil {
 		return fmt.Errorf("validate MCP tool path: nil server: %w", corerrors.ErrValidation)
 	}
+	if strings.TrimSpace(goos) == "" {
+		return fmt.Errorf("%w: target OS must not be empty", corerrors.ErrValidation)
+	}
 	trimmed := strings.TrimSpace(path)
 	sep := "/"
 	normalized := posixSessionPathReplacer.Replace(trimmed)
@@ -451,6 +454,9 @@ func (s *Server) validateSessionPathForOS(path, goos string) (result error) {
 }
 
 func isLocalSessionPathForOS(normalized, goos string) bool {
+	if strings.TrimSpace(goos) == "" {
+		return false
+	}
 	if normalized == "" || strings.IndexByte(normalized, 0) >= 0 {
 		return false
 	}
@@ -460,7 +466,7 @@ func isLocalSessionPathForOS(normalized, goos string) bool {
 	sep := "/"
 	if goos == "windows" {
 		sep = "\\"
-		if len(normalized) >= 2 && normalized[1] == ':' {
+		if strings.IndexByte(normalized, ':') >= 0 {
 			return false
 		}
 	}
@@ -468,8 +474,13 @@ func isLocalSessionPathForOS(normalized, goos string) bool {
 		if segment == ".." {
 			return false
 		}
-		if goos == "windows" && isWindowsReservedDeviceName(segment) {
-			return false
+		if goos == "windows" {
+			if segment != "" && segment != "." && (strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ")) {
+				return false
+			}
+			if isWindowsReservedDeviceName(segment) {
+				return false
+			}
 		}
 	}
 	if goos == runtime.GOOS && !filepath.IsLocal(normalized) {
@@ -479,14 +490,21 @@ func isLocalSessionPathForOS(normalized, goos string) bool {
 }
 
 func isWindowsReservedDeviceName(segment string) bool {
-	stem, _, _ := strings.Cut(segment, ".")
-	stem = strings.TrimRight(stem, " ")
-	switch strings.ToUpper(stem) {
-	case "CON", "PRN", "AUX", "NUL":
+	stem := segment
+	if idx := strings.IndexAny(stem, ".:"); idx >= 0 {
+		stem = stem[:idx]
+	}
+	stem = strings.TrimRight(stem, " .")
+	upper := strings.ToUpper(stem)
+	switch upper {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
 		return true
 	}
-	if len(stem) == 4 && (strings.EqualFold(stem[:3], "COM") || strings.EqualFold(stem[:3], "LPT")) {
-		return stem[3] >= '1' && stem[3] <= '9'
+	if strings.HasPrefix(upper, "COM") || strings.HasPrefix(upper, "LPT") {
+		switch upper[3:] {
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+			return true
+		}
 	}
 	return false
 }
