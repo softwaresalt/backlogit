@@ -33,9 +33,9 @@ lint:
 
 format:
   tool: "gofmt"
-  command: "gofmt -l ."
-  check_command: "gofmt -l ."
-  fix_command: "gofmt -w ."
+  command: "gofmt -l cmd internal tests scripts"  # scripts/ contains tracked Go utility code
+  check_command: "gofmt -l cmd internal tests scripts"
+  fix_command: "gofmt -w cmd internal tests scripts"
 
 ci:
   platform: "GitHub Actions"
