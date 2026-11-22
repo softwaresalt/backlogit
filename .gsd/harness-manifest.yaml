@@ -1,9 +1,9 @@
 schema_version: "1.1.0"
 installed_at: "2026-05-17T23:40:00Z"
-tuned_at: "2026-11-21T05:35:00Z"
+tuned_at: "2026-11-22T21:25:00Z"
 gsd_version: "1.6.0"
 gsd_home: "C:\\Source\\GitHub\\backlogit\\.bin"
-profile_hash: "afd99db4806ac1832083c62b84722bb85307e9e1dd349aca2697976640fe479d"
+profile_hash: "0e98a3f7598420b5b67fc5f211251f2dacfeec0db5f1061eb30cb4f55415ffbd"
 config_hash: "1bd51a551e52b75e94edd25d2bc27e9e8bc696752b7474c3f75683a1dff0f10e"
 install_preset: full
 capability_packs:
@@ -88,7 +88,7 @@ artifacts:
   - path: ".github/policies/workflow-policies.md"
     primitive: 8
     template: "templates/policies/workflow-policies.md.tmpl"
-    checksum: "80599d24e858240cd8e6bad0b2230f545654b2297172f49727332de50ecb0012"
+    checksum: "fdaa980bfa51331c18f0cd6aa9f4448797cba311f284fa4c0de8b8e8e8456318"
     drift_allowed: true
     drift_reason: "Shipment 155-S final-review remediation. P-015 now matches the implemented flat explicit shipment scope: listed features do not imply descendant or linked-deliberation membership, and only explicit members plus the shipment control record participate in closure. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). 2026-09-27 tune review (TUNE-010): v1.31.0 P-013.1 resolved tier compliance and P-013.3 analyze-then-halt escalation."
   - path: ".github/skills/spike/SKILL.md"
@@ -126,14 +126,14 @@ artifacts:
   - path: "AGENTS.md"
     primitive: 9
     template: "templates/foundation/AGENTS.md.tmpl"
-    checksum: "4d4b8bbaced4a1fbaf98403f413e5db69c08a2dad89cfb679f3660c6e275afba"
+    checksum: "7dca076f7408b6b5113e6b577762dca3af0cabb9343d3811358032dbcb18892b"
     note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). The upstream continuous-learning overlay hardcodes docs/learnings/, conflicting with the configured continuous_learning.directory (.gsd/continuous-learning) that the pack's own instruction file uses, which would let agents write observations to two different stores. Aligned to the configured directory. Do not auto-revert."
   - path: ".github/copilot-instructions.md"
     primitive: 6
     template: "templates/foundation/copilot-instructions.md.tmpl"
-    checksum: "ec325a208feece35bf1f219d88e50e27fda8a0a355b8f2b359eb92a4782fb511"
+    checksum: "8e065a820b1c78b9cdf313479f250062a1d4a490810465895367ce17f4bc0d78"
     note: "073-DL E4: the Test row and Commands block now name the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #400). Same continuous-learning storage-path conflict as AGENTS.md; aligned to the configured continuous_learning.directory. Do not auto-revert."
@@ -174,8 +174,10 @@ artifacts:
   - path: ".github/instructions/constitution.instructions.md"
     primitive: 1
     template: "templates/foundation/constitution.instructions.md.tmpl"
-    checksum: "7890d9624e33c301297e1130d1c775c94597553362de7fc4f049c0321a3c4170"
+    checksum: "4fafa46ca802eec05def61eecea4aa085574e13c13e73535b698d75eb952928c"
     note: "073-DL E4: Principle II, Technical Constraints and Quality Gates now name the governed full-suite command go test -timeout=30m ./... (MINOR 1.1.0; checksum rotated, LF-normalized)."
+    drift_allowed: true
+    drift_reason: "DF533572 / 079-DL: scoped gofmt -l cmd internal tests scripts (and Constitution v1.1.1 amendment record) to exclude workspace-bound .copilot session caches while enforcing 100% repository Go source formatting. Do not auto-revert."
   - path: ".github/agents/review/adversarial-review.agent.md"
     primitive: 7
     template: "templates/agents/adversarial-review.agent.md.tmpl"
@@ -221,8 +223,10 @@ artifacts:
   - path: ".github/instructions/go.instructions.md"
     primitive: 6
     template: "templates/instructions/technology-go.instructions.md.tmpl"
-    checksum: "181f78303d4b2245274dd5befdf919a6c57bdac0ca1d75f067c9cb336e5e4b54"
+    checksum: "f5a18c7090da119c865da3e2493808c429b00c8e91f2afa8c22dbc2d67c89fad"
     note: "073-DL E4: the Commands block now names the governed full-suite command go test -timeout=30m ./... and its coverage variant (checksum rotated, LF-normalized)."
+    drift_allowed: true
+    drift_reason: "DF533572 / 079-DL: scoped gofmt -l cmd internal tests scripts (and Constitution v1.1.1 amendment record) to exclude workspace-bound .copilot session caches while enforcing 100% repository Go source formatting. Do not auto-revert."
   - path: "scripts/acquire_lock.ps1"
     primitive: 5
     template: "concurrency pack script"
@@ -268,7 +272,7 @@ artifacts:
   - path: ".github/instructions/github-pr-automation.instructions.md"
     primitive: 4
     template: "templates/instructions/github-pr-automation.instructions.md.tmpl"
-    checksum: "789f848d18ca08119292f6aac072bb5ba45679b3a716e86463407b28aafb0dd6"
+    checksum: "296afbaf121f59b62af62b4fd50361d2b62af119df69ffa60457785f6480064a"
     note: "073-DL E3: fix loop 1.4 now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Copilot review fix (PR #577). §1.6.1 item 7 unconditionally required a fixing push before posting a threadless review-body disposition comment, which deadlocks reviews containing only deferred or declined body findings (no code change). Scoped the push prerequisite to code-fixed findings and permitted posting after P-021 C2 capture/rationale when all findings are deferred or declined. Do not auto-revert."
@@ -349,7 +353,7 @@ artifacts:
   - path: ".github/agents/subagents/go-engineer.agent.md"
     primitive: 6
     template: "templates/agents/language-engineer.agent.md.tmpl"
-    checksum: "95cff6f7256c86fff182c43ae9200f58810a7ab67da7eaa9656077c0db12d3da"
+    checksum: "30b9a5e73bd6d8a79ba510935fb43ca3eb243e5d782b4512820d93598f91bdcf"
     note: "073-DL E3: the full-suite instruction now names the governed full-suite command go test -timeout=30m ./... (checksum rotated, LF-normalized)."
     drift_allowed: true
     drift_reason: "Operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so this subagent's tools line adds backlogit/* to the template's vscode, execute, read, edit, search. Do not auto-revert or narrow to an explicit backlogit operation allowlist."
@@ -372,7 +376,7 @@ artifacts:
   - path: ".github/agents/_ship.agent.md"
     primitive: 1
     template: "templates/agents/_ship.agent.md.tmpl"
-    checksum: "d439a7a98ae7580b1d7beb16f06202f81fdd55804242ce8c7841b0d4429161e6"
+    checksum: "296f8a5ef00f3adf80fbf92e34fc4504e8dd1595f839ed5bf1af2a400c50afdf"
     drift_allowed: true
     drift_reason: "Deliberate Ship drift: preserve the scalar tools string with vscode/memory, the full backlogit/* MCP tool surface (operator directive 2026-10-04: the backlogit workspace dogfoods every backlogit command and subcommand, so do not narrow it back to an explicit backlogit operation allowlist), engram/*, and the eight read-only graphtor verbs; also preserve the tuned model routing and Shipment 155-S flat-membership guidance. Do not auto-revert. 073-DL rev22: explicit governed full-suite budget `go test -timeout=30m ./...` (Steps 4.6/5, P-002.6, P-004). MCP tool references are server-qualified (backlogit/<operation>, kbdb/<verb>) because VS Code and Copilot CLI silently ignore bare MCP tool names. 2026-09-27 tune review (TUNE-010): Steps 4.1c/4.1d fail-open telemetry context and tool-event emission, Step 4.5 telemetry close, placeholder fix. 196-F / shipment 196-S: Step 6 item a explicit-feature reconcile wording (stash B83081F5) and the Step 4.0 / Step 4.1b use-time Served-Root Attestation (stash 227A2930), plus the Step 0.5 item 3a write of the Orchestrator-supplied served-root handoff outcome after BRANCH_OK or BRANCH_CREATED (local review, PR #478). Do not auto-revert. CX U17 refresh (197-S): checksum refreshed to the LF-normalized SHA-256 for the ship closure protocol and gate correctness release; governing stash 75E02C17, 52D18E44, 497D20E3, 67F17B6B, FBD6E6F8,     8F1CF1E1, 6AB5E7FC, F05661B1. AF1E5075 hold-label refusal and condition (b) pre-claim contract; the 154-S clauses are a workspace-local overlay excluded from upstream template sync;     generic hold-label text is an upstream template sync candidate. 6434A4D7 governed queued-shipment disposition role contract; upstream template sync pending"
   - path: ".github/skills/harness-architect/SKILL.md"
@@ -391,7 +395,7 @@ artifacts:
   - path: ".github/instructions/copilot-code-review.instructions.md"
     primitive: 7
     template: "templates/instructions/copilot-code-review.instructions.md.tmpl"
-    checksum: "ac5e264cfe41c1ab72b2626a39e63416093743e2e9ffee0edc014e6906fac807"
+    checksum: "293dc7102d54f4f4b60b1f1b2ab6445d27dd4850850a212c44d055952fca12e9"
     note: "GitHub Copilot code-review focus instruction; installed 2026-08-30 (adversarial-verification pass) because this workspace is GitHub-hosted (origin -> github.com/softwaresalt/backlogit) and verify-harness requires the focus surface. Rendered byte-identically from the 1.5.0 template with PROJECT_NAME=backlogit and a Go/backlogit-specific HARNESS_ENFORCED_SUMMARY; applyTo '**' and excludeAgent 'cloud-agent' preserved. Complements — does not replace — the hand-authored .github/copilot-review-instructions.md. Base-branch activated: takes effect for code review only after merge. Checksum is EOL-normalized (LF), matching this manifest's convention. 073-DL E5: the HARNESS_ENFORCED_SUMMARY render input and this rendered consumer were migrated together to the governed `go test -timeout=30m ./...` budget."
   - path: ".github/instructions/coding-discipline.instructions.md"
     primitive: 5
@@ -615,7 +619,7 @@ variables_used:
   BUILD_COMMAND: "go build ./cmd/backlogit"
   TEST_COMMAND: "go test -timeout=30m ./..."
   LINT_COMMAND: "golangci-lint run"
-  FORMAT_COMMAND: "gofmt -l ."
+  FORMAT_COMMAND: "gofmt -l cmd internal tests scripts"
   CI_PLATFORM: "GitHub Actions"
   SOURCE_LAYOUT: "cmd/, internal/, tests/"
   TEST_LAYOUT: "tests/ and colocated *_test.go files"
@@ -657,7 +661,7 @@ variables_used:
   SHIP_ESCALATION_CONTEXT_TIER: "long_context"
   PROJECT_NAME: "backlogit"
   HARNESS_ENFORCED_SUMMARY: |
-    * Go formatting, linting, and vet mechanics (`gofmt -l .`, `golangci-lint run`, `go vet ./...`)
+    * Go formatting, linting, and vet mechanics (`gofmt -l cmd internal tests scripts`, `golangci-lint run`, `go vet ./...`)
     * Workflow policies P-001 through P-021 and constitutional principle sequencing
     * Test-first red-green gate mechanics (P-002, P-004) and the `go test -timeout=30m ./...` suite run
     * Merge-commit-only discipline (P-009, Principle XI) — squash and rebase are forbidden
