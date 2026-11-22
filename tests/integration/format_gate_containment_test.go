@@ -42,44 +42,49 @@ func TestU1_MakefileFormatGateScopesSourceDirectoriesAndCoversTrackedGo(t *testi
 	})
 
 	t.Run("Go source directory completeness", func(t *testing.T) {
-		var goFiles []string
-		_, statErr := os.Stat(filepath.Join(repoRoot, ".git"))
-		switch {
-		case statErr == nil:
-			cmd := exec.CommandContext(t.Context(), "git", "-C", repoRoot, "ls-files", "-z", "--", "*.go")
-			out, err := cmd.Output()
-			require.NoError(t, err, "git ls-files for *.go must succeed")
-			for _, raw := range bytes.Split(out, []byte{0}) {
-				if len(raw) == 0 {
-					continue
+		collectGoFiles := func(t *testing.T, root string) []string {
+			t.Helper()
+			var goFiles []string
+			_, statErr := os.Stat(filepath.Join(root, ".git"))
+			switch {
+			case statErr == nil:
+				cmd := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files", "-z", "--", "*.go")
+				out, err := cmd.Output()
+				require.NoError(t, err, "git ls-files for *.go must succeed")
+				for _, raw := range bytes.Split(out, []byte{0}) {
+					if len(raw) == 0 {
+						continue
+					}
+					goFiles = append(goFiles, filepath.ToSlash(string(raw)))
 				}
-				goFiles = append(goFiles, filepath.ToSlash(string(raw)))
-			}
-		case errors.Is(statErr, os.ErrNotExist):
-			err := filepath.WalkDir(repoRoot, func(p string, d fs.DirEntry, walkErr error) error {
-				if walkErr != nil {
-					return walkErr
-				}
-				if d.IsDir() {
-					if d.Name() != "." && strings.HasPrefix(d.Name(), ".") {
-						return filepath.SkipDir
+			case errors.Is(statErr, os.ErrNotExist):
+				err := filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+					if walkErr != nil {
+						return walkErr
+					}
+					if d.IsDir() {
+						if p != root && strings.HasPrefix(d.Name(), ".") {
+							return filepath.SkipDir
+						}
+						return nil
+					}
+					if strings.HasSuffix(d.Name(), ".go") {
+						rel, relErr := filepath.Rel(root, p)
+						if relErr != nil {
+							return relErr
+						}
+						goFiles = append(goFiles, filepath.ToSlash(rel))
 					}
 					return nil
-				}
-				if strings.HasSuffix(d.Name(), ".go") {
-					rel, relErr := filepath.Rel(repoRoot, p)
-					if relErr != nil {
-						return relErr
-					}
-					goFiles = append(goFiles, filepath.ToSlash(rel))
-				}
-				return nil
-			})
-			require.NoError(t, err, "walking repoRoot for .go files must succeed")
-		default:
-			require.NoError(t, statErr)
+				})
+				require.NoError(t, err, "walking root for .go files must succeed")
+			default:
+				require.NoError(t, statErr)
+			}
+			return goFiles
 		}
 
+		goFiles := collectGoFiles(t, repoRoot)
 		require.NotEmpty(t, goFiles, "repository must contain tracked .go files")
 
 		allowedDirs := map[string]bool{
@@ -94,6 +99,14 @@ func TestU1_MakefileFormatGateScopesSourceDirectoriesAndCoversTrackedGo(t *testi
 			top := strings.SplitN(rel, "/", 2)[0]
 			assert.True(t, allowedDirs[top], "Go file %q resides in top-level directory %q outside {cmd, internal, tests, scripts}", rel, top)
 		}
+
+		dotExportRoot := filepath.Join(t.TempDir(), ".archive-export")
+		probeFile := filepath.Join(dotExportRoot, "cmd", "probe", "main.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(probeFile), 0o750))
+		require.NoError(t, os.WriteFile(probeFile, []byte("package main\n"), 0o600))
+		dotGoFiles := collectGoFiles(t, dotExportRoot)
+		assert.Equal(t, []string{"cmd/probe/main.go"}, dotGoFiles,
+			".git-less WalkDir fallback must not skip a dot-prefixed root directory")
 	})
 }
 
@@ -161,13 +174,22 @@ func TestU2_MakePS1FormatGateScopesSourceDirectories(t *testing.T) {
 			require.NoError(t, os.WriteFile(dst, []byte(src), 0o600), "write probe file %s", rel)
 		}
 
+		unscopedCmd := exec.CommandContext(t.Context(), "gofmt", "-l", ".")
+		unscopedCmd.Dir = probeDir
+		unscopedOut, unscopedErr := unscopedCmd.CombinedOutput()
+		require.Error(t, unscopedErr, "negative control: unscoped gofmt -l . must fail on .copilot/invalid.go")
+		assert.Contains(t, string(unscopedOut), ".copilot", "negative control: unscoped gofmt -l . must traverse .copilot")
+
 		cmd := exec.CommandContext(t.Context(), "gofmt", "-l", "cmd", "internal", "tests", "scripts")
 		cmd.Dir = probeDir
 		out, err := cmd.CombinedOutput()
 		assert.NoError(t, err, "scoped gofmt must succeed when .copilot contains invalid Go; output:\n%s", string(out))
 		assert.Empty(t, strings.TrimSpace(string(out)), "scoped gofmt must report no unformatted files")
 
-		if _, lookErr := exec.LookPath("pwsh"); lookErr == nil {
+		t.Run("pwsh make.ps1 fmt", func(t *testing.T) {
+			if _, lookErr := exec.LookPath("pwsh"); lookErr != nil {
+				t.Skipf("pwsh not found on PATH (%v)", lookErr)
+			}
 			pwshCmd := exec.CommandContext(t.Context(), "pwsh", "-NoProfile", "-NonInteractive", "-File", filepath.Join(repoRoot, "make.ps1"), "fmt")
 			pwshCmd.Dir = probeDir
 			pwshOut, pwshErr := pwshCmd.CombinedOutput()
@@ -177,9 +199,7 @@ func TestU2_MakePS1FormatGateScopesSourceDirectories(t *testing.T) {
 			assert.NotContains(t, outStr, "FAILED:", "pwsh make.ps1 fmt must not report failure")
 			assert.NotContains(t, outStr, ".copilot", "pwsh make.ps1 fmt must not inspect .copilot")
 			assert.NotContains(t, outStr, ".go", "pwsh make.ps1 fmt must not report any .go files")
-		} else {
-			t.Logf("pwsh not found on PATH (%v); skipping pwsh make.ps1 fmt execution", lookErr)
-		}
+		})
 	})
 }
 
@@ -338,13 +358,15 @@ func TestU10_HarnessManifestFormatGateAndChecksumsReconciled(t *testing.T) {
 	})
 
 	t.Run("14-surface scoped gofmt parity", func(t *testing.T) {
-		unscopedGofmtPattern := regexp.MustCompile(`\bgofmt\s+-[lw]\s+\.(?:$|\s|[;|&)"'` + "`" + `])`)
-		unscopedGoimportsPattern := regexp.MustCompile(`\bgoimports\s+-l\s+\.(?:$|\s|[;|&)"'` + "`" + `])`)
+		unscopedGofmtPattern := regexp.MustCompile(`\bgofmt\s+-[lw]\b[^\n` + "`" + `"]*(?:\s)\.(?:/|$|\s|[;|&)"'` + "`" + `])`)
+		unscopedGoimportsPattern := regexp.MustCompile(`\bgoimports\s+-l\b[^\n` + "`" + `"]*(?:\s)\.(?:/|$|\s|[;|&)"'` + "`" + `])`)
 
 		require.True(t, unscopedGofmtPattern.MatchString("`gofmt -l .`"), "unscopedGofmtPattern must match inline code span")
 		require.True(t, unscopedGofmtPattern.MatchString("gofmt -w ."), "unscopedGofmtPattern must match gofmt -w .")
+		require.True(t, unscopedGofmtPattern.MatchString("gofmt -w cmd internal tests scripts ."), "unscopedGofmtPattern must reject trailing root operand")
 		require.False(t, unscopedGofmtPattern.MatchString("gofmt -l cmd internal tests scripts"), "unscopedGofmtPattern must not match scoped gofmt")
 		require.True(t, unscopedGoimportsPattern.MatchString("goimports -l ."), "unscopedGoimportsPattern must match goimports -l .")
+		require.True(t, unscopedGoimportsPattern.MatchString("goimports -l cmd internal tests scripts ."), "unscopedGoimportsPattern must reject trailing root operand")
 		require.False(t, unscopedGoimportsPattern.MatchString("goimports -l cmd internal tests scripts"), "unscopedGoimportsPattern must not match scoped goimports")
 
 		surfaces := []struct {
