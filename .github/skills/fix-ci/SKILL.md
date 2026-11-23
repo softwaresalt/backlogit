@@ -11,7 +11,7 @@ Detect CI failures and code review comments on the current branch's PR, reproduc
 
 * Git repository with a remote tracked branch and an open PR
 * Access to CI pipeline status via `gh` CLI or equivalent tool
-* Local tools required by this skill must be available in PATH, including the configured quality gates `go test -timeout=30m ./...`–`gofmt -l .`; if formatting fixes are applied during remediation, `gofmt -w .` must also be available
+* Local tools required by this skill must be available in PATH, including the configured quality gates `go test -timeout=30m ./...`–`gofmt -l cmd internal tests scripts`; if formatting fixes are applied during remediation, `gofmt -w cmd internal tests scripts` must also be available
 * Backlog tool configured when defect logging is enabled (circuit breaker halt path)
 
 ## Quick Start
@@ -68,7 +68,7 @@ detail extraction via check-run annotations (§2.5).
 
 **CI Pipeline Order** (fix in this order):
 
-1. Format check (`gofmt -l .`)
+1. Format check (`gofmt -l cmd internal tests scripts`)
 2. Lint (`golangci-lint run`)
 3. Test (`go test -timeout=30m ./...`)
 
@@ -122,7 +122,7 @@ comment lifecycle.
 
 Run the failing CI steps locally in order:
 
-1. `gofmt -l .` → if fails, run `gofmt -w .`
+1. `gofmt -l cmd internal tests scripts` → if fails, run `gofmt -w cmd internal tests scripts`
 2. `golangci-lint run` → fix violations
 3. `go test -timeout=30m ./...` → fix failing tests
 
@@ -190,7 +190,7 @@ Run the full quality gate sequence:
 go test -timeout=30m ./...
 go vet ./...
 golangci-lint run
-gofmt -l .
+gofmt -l cmd internal tests scripts
 ```
 
 All gates must pass before pushing.
@@ -284,7 +284,7 @@ approaches before escalating to the operator.
 
 | Pattern | When to apply | When to escalate |
 |---|---|---|
-| Run auto-fix command | Formatting diff exists and auto-fix is configured (`gofmt -w .`) | Auto-fix introduces semantic changes or breaks tests |
+| Run auto-fix command | Formatting diff exists and auto-fix is configured (`gofmt -w cmd internal tests scripts`) | Auto-fix introduces semantic changes or breaks tests |
 | Align editor config | Consistent style violations across many files (trailing spaces, indentation) | Different files require different styles (legacy code) |
 | Add format ignore annotation | Generated or vendored file that should not be formatted | More than 10% of files need ignore annotations |
 

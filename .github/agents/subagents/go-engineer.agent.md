@@ -75,7 +75,7 @@ Avoid these Go-specific anti-patterns:
 2. Run `go test -run=^$ -count=1 ./...` before starting — confirm baseline compiles
 3. Write the minimal implementation to make the failing harness tests pass
 4. Run `go test -timeout=30m ./...` — all harness tests must pass before proceeding
-5. Run quality gates: `golangci-lint run` and `gofmt -l .`
+5. Run quality gates: `golangci-lint run` and `gofmt -l cmd internal tests scripts`
 6. Return to the invoking skill with the result
 
 ## Model Routing

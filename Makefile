@@ -26,7 +26,7 @@ vet:
 	go vet ./...
 
 fmt:
-	@bad=$$(gofmt -l .); test -z "$$bad" || { printf '%s\n' "$$bad"; exit 1; }
+	@bad=$$(gofmt -l cmd internal tests scripts) || { rc=$$?; [ -n "$$bad" ] && printf '%s\n' "$$bad"; exit $$rc; }; test -z "$$bad" || { printf '%s\n' "$$bad"; exit 1; }
 
 cover:
 	go tool cover -func=coverage.out

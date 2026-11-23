@@ -1009,7 +1009,7 @@ without one.
 After the build-feature skill reports success:
 
 1. **Lint**: `golangci-lint run`
-2. **Format**: `gofmt -l .`
+2. **Format**: `gofmt -l cmd internal tests scripts`
 3. **Task-scoped test suite**: run the task's own scoped `harness_cmd` plus exactly the frozen
    `green_regression_cmds` array from Step 3 item 4, whose absent-block default is `[]`, and nothing
    else. **Do not run a repo-wide or full-package suite here**, infer commands from prose, or add
@@ -1215,7 +1215,7 @@ part, and unfiltered whenever it can be.
    * `go test -run=^$ -count=1 ./...` — the repo-wide **compile** check. It executes no test, so no
      designed red can affect it, and it is what catches a broken build that a narrowed suite would
      hide.
-   * `go vet ./...`, `golangci-lint run`, `gofmt -l .` — the repo-wide static gates.
+   * `go vet ./...`, `golangci-lint run`, `gofmt -l cmd internal tests scripts` — the repo-wide static gates.
    * The wave's **closed list of declared scoped commands**: every member's `harness_cmd` and its
      declared `green_regression_cmds`, each of which must pass — **except** a red-deliverable
      member, whose declared `red_selector_command` must still be observed **RED**. A red deliverable

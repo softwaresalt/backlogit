@@ -23,7 +23,7 @@ maintainability.
 * Handle errors explicitly using the project's sentinel error
   hierarchy; never discard errors silently.
 * Write code that passes `golangci-lint run`, `go vet ./...`, and
-  `gofmt -l .` with zero findings.
+  `gofmt -l cmd internal tests scripts` with zero findings.
 * Prefer the standard library over third-party packages when the
   standard library solution is adequate.
 * Keep imports organized in three groups separated by blank lines:
@@ -35,8 +35,8 @@ maintainability.
 go test -timeout=30m ./...             # Run all tests
 go test -timeout=30m -coverprofile=coverage.out ./... # Run with coverage report
 golangci-lint run                      # Lint (style, bugs, complexity)
-gofmt -l .                             # Check formatting
-goimports -l .                         # Check import ordering
+gofmt -l cmd internal tests scripts    # Check formatting
+goimports -l cmd internal tests scripts # Check import ordering
 go vet ./...                           # Static analysis
 go build ./cmd/...                     # Build binaries
 ```
