@@ -4,7 +4,7 @@
   "feature_id": "221-F",
   "merge_commit_sha": "740dba66604973a8adfd1f19e2489c389a64e207",
   "phase": "post_close",
-  "archive_commit": "9984de55274e",
+  "archive_commit": "9984de55274e7810bf1492aa7c825cd6293924ac",
   "invocation": {
     "surface": "mcp",
     "tool": "backlogit_ship_shipment",
@@ -148,9 +148,29 @@
   },
   "compaction": {
     "skill": "compact-context",
-    "target": "all",
-    "candidates": 0,
-    "files_archived": 0,
+    "target": "memory/all",
+    "engram_degraded": true,
+    "candidates": 3,
+    "summaries_created": 1,
+    "files_archived": 3,
+    "source_bytes": 7248,
+    "summary_bytes": 4494,
+    "live_memory_reduction_bytes": 2754,
+    "live_memory_reduction_percent": 38.0,
+    "summary_path": "docs/memory/compacted/2026-11-23-222-s-221-f-compacted.md",
+    "archived_paths": [
+      "docs/archive/memory/2026-11-22/222-s-served-root-handoff.md",
+      "docs/archive/memory/2026-11-22/222-s-session-summary.md",
+      "docs/archive/memory/2026-11-23/222-s-final-test-gate-halt.md"
+    ],
+    "original_paths": [
+      "docs/memory/2026-11-22/222-s-served-root-handoff.md",
+      "docs/memory/2026-11-22/222-s-session-summary.md",
+      "docs/memory/2026-11-23/222-s-final-test-gate-halt.md"
+    ],
+    "active_checkpoints_preserved": true,
+    "plans_preserved": true,
+    "unrelated_memories_preserved": true,
     "status": "done",
     "report": "docs/closure/222-S-compaction-report.md"
   }

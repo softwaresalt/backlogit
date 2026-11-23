@@ -3,7 +3,7 @@ title: "222-S / 221-F post-merge closure"
 description: "Post-merge operational closure and releasability evidence for Shipment 222-S (Feature 221-F)."
 doc_type: closure
 source: docs/closure/222-S-221-F-post-merge-closure.md
-ingested_at: "2026-11-23T22:17:10Z"
+ingested_at: "2026-11-23T22:51:00Z"
 schema_version: "1.0"
 chunk_strategy: h1-h2-h3
 closure_status: READY
@@ -113,17 +113,22 @@ deployment, service, migration, feature-flag, or dependent-system validator.
 recent compound entries were classified, and no `docs/compound/` file was
 edited. See [222-S compound refresh](222-S-compound-refresh.md).
 
-`compact-context` ran with `target: all` before this status was finalized.
-The required `threshold_days: 14`, `max_files: 40`, and
-`max_size_kb: 500` thresholds were applied to the corpus. No qualifying
-222-S artifact was selected for archival: the current 222-S memory records are
-recent, the most recent checkpoint state is preserved, and unrelated plans,
-checkpoints, and active work remain untouched. The invocation completed
-successfully with zero files archived, zero space recovered, zero plans
-consolidated, and zero closure records compacted. P-020
-`compaction_status` is `done`.
+`compact-context` ran with `target: memory/all` before this status was
+finalized. The completed-release candidate set was fixed to the three 222-S
+memory artifacts named in the compaction report. They were consolidated into
+one durable summary and moved, without deletion, to date-preserving paths under
+`docs/archive/memory/`. No backlog checkpoint, plan, unrelated memory,
+`.gsd` state, or `.kbdb` state was selected.
+
+The implementation release moved from `feat/222-s` to
+`post-merge/222-s-closure` after merge so closure-only evidence, archive
+governance, and P-020 compaction remained isolated from the delivered
+implementation. Compaction completed with `3` originals archived and `1`
+summary created. The source total was `7,248` bytes, and the summary is
+`4,494` bytes, for an estimated live `docs/memory/` reduction of `2,754`
+bytes (`38.0%`). P-020 `compaction_status` is `done`.
 See [222-S P-020 compaction report](222-S-compaction-report.md) for the
-assessment and candidate counts.
+exact counts and archival trace links.
 
 ## Dark-mode closure summary
 
@@ -145,4 +150,4 @@ assessment and candidate counts.
 | Releasability | `required: true` | `READY` |
 | Monitoring and rollback | Required for closure traceability | Recorded |
 | Archive integrity | Governed close requirement | `P-007 PASS` |
-| P-020 compaction | Mandatory post-merge duty | `done` |
+| P-020 compaction | Mandatory post-merge duty | `done`; 3 archived, 1 summary |
