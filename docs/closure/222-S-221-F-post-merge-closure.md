@@ -41,7 +41,7 @@ shipment. `returned_ids` is empty. No non-member artifact was mutated.
 | --- | --- |
 | `.backlogit/reconcile/222-S-pre-20261123T221145Z.md` | `PROCEED` |
 | `.backlogit/reconcile/222-S-safe-close-20261123T221233Z.md` | `CLOSED` |
-| `.backlogit/reconcile/222-S-post-20261123T221303Z.md` | `CLOSED` |
+| `.backlogit/reconcile/222-S-post-20261123T221303Z.md` | `PROCEED` |
 
 Canonical evidence is [222-S close evidence](evidence/222-S-221-F-close-evidence.json).
 P-007 passed, doctor found zero shipped-event findings for `222-S`, and the
@@ -59,9 +59,14 @@ later triage. Closure did not add, remove, or resolve these follow-ups.
 
 ## Verification and releasability
 
-The pre-merge implementation HEAD completed
+The tested implementation baseline `f309820a268f9db2cf4229c421ce258bab24645a`
+completed
 `go test -timeout=30m -p 2 -parallel 4 ./...` with exit code `0` for all
-`47/47` listed packages. The pre-merge full build exited `0`. The
+`47/47` listed packages. The final reviewed PR HEAD
+`685057c58841947819bab6c8d65d5d05a19722de` differed only in two checkpoint
+records and one continuity-memory file, so the production and test source
+surface is identical across the tested and reviewed heads. The pre-merge full
+build exited `0`. The
 post-merge build, CLI version probe, and docs lint all exited `0`.
 
 Runtime requirements in `.gsd/workspace-profile.yaml` define
@@ -117,6 +122,8 @@ checkpoints, and active work remain untouched. The invocation completed
 successfully with zero files archived, zero space recovered, zero plans
 consolidated, and zero closure records compacted. P-020
 `compaction_status` is `done`.
+See [222-S P-020 compaction report](222-S-compaction-report.md) for the
+assessment and candidate counts.
 
 ## Dark-mode closure summary
 

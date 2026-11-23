@@ -29,14 +29,19 @@ were generated.
 
 ## Pre-merge evidence
 
-The implementation HEAD completed:
+The tested implementation baseline
+`f309820a268f9db2cf4229c421ce258bab24645a` completed:
 
 ```text
 go test -timeout=30m -p 2 -parallel 4 ./...
 ```
 
 The command exited `0`, and all `47/47` listed packages passed. The pre-merge
-full build also exited `0`.
+full build also exited `0`. The final reviewed PR head
+`685057c58841947819bab6c8d65d5d05a19722de` changed only two checkpoint JSON
+records and one continuity-memory Markdown file relative to the tested
+baseline; no production, test, workflow, Makefile, PowerShell, or profile
+source changed between those heads.
 
 ## Structured validator evidence
 
@@ -44,7 +49,7 @@ full build also exited `0`.
 | --- | --- | --- | --- |
 | `go build -o logs/backlogit-222s-postmerge.exe ./cmd/backlogit` | Binary builds cleanly | `0` | Post-merge binary built |
 | `.\logs\backlogit-222s-postmerge.exe version --no-update-check --format json` | Valid CLI version JSON | `0` | Valid JSON emitted |
-| Post-merge CLI docs lint JSON probe | `valid: true`, zero findings | `0` | `valid: true`, `0` findings |
+| `.\logs\backlogit-222s-postmerge.exe docs lint --format json` | `valid: true`, zero findings | `0` | `valid: true`, `0` findings |
 
 No additional validator surface was declared, so no browser, service, or
 external integration probe applies. The `required: false` setting does not

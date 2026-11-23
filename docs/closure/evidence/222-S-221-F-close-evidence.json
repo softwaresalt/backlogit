@@ -6,10 +6,13 @@
   "phase": "post_close",
   "archive_commit": "9984de55274e",
   "invocation": {
+    "surface": "mcp",
     "tool": "backlogit_ship_shipment",
     "arguments": {
       "id": "222-S",
-      "sha": "740dba66604973a8adfd1f19e2489c389a64e207"
+      "sha": "740dba66604973a8adfd1f19e2489c389a64e207",
+      "message": "Merge Shipment 222-S implementation PR #673",
+      "author": "_Ship"
     },
     "mutation_state": "completed"
   },
@@ -138,8 +141,17 @@
     "parent_id_preserved": true,
     "p007_archive_integrity": "PASS",
     "doctor_shipped_event_findings_for_222_S": 0,
+    "post_reconcile_recommendation": "PROCEED",
     "non_member_untouched": true,
     "postcondition_verdict": "pass",
     "failures": []
+  },
+  "compaction": {
+    "skill": "compact-context",
+    "target": "all",
+    "candidates": 0,
+    "files_archived": 0,
+    "status": "done",
+    "report": "docs/closure/222-S-compaction-report.md"
   }
 }
