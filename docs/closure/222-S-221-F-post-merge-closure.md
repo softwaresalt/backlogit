@@ -102,10 +102,11 @@ deployment, service, migration, feature-flag, or dependent-system validator.
   code `0`, and docs lint remains valid with zero findings.
 * **Failure signals and rollback trigger**: Build failure, CLI version command
   failure, or docs lint reporting invalid output or any finding.
-* **Rollback procedure**: Open an operator-approved revert of
-  `740dba66604973a8adfd1f19e2489c389a64e207` without modifying the governed
-  `.backlogit/archive/` history, then rerun the build, version, and docs lint
-  probes.
+* **Rollback procedure**: Open an operator-approved implementation-only
+  revert with `git revert -n -m 1
+  740dba66604973a8adfd1f19e2489c389a64e207`, restore all `.backlogit/`
+  paths from `HEAD` before staging the rollback, and rerun the build, version,
+  and docs lint probes. Governed archive history remains preserved.
 
 ## Knowledge refresh and P-020 compaction
 
@@ -113,7 +114,7 @@ deployment, service, migration, feature-flag, or dependent-system validator.
 recent compound entries were classified, and no `docs/compound/` file was
 edited. See [222-S compound refresh](222-S-compound-refresh.md).
 
-`compact-context` ran with `target: memory/all` before this status was
+`compact-context` ran with mandatory `target: all` before this status was
 finalized. The completed-release candidate set was fixed to the three 222-S
 memory artifacts named in the compaction report. They were consolidated into
 one durable summary and moved, without deletion, to date-preserving paths under
@@ -125,8 +126,8 @@ The implementation release moved from `feat/222-s` to
 governance, and P-020 compaction remained isolated from the delivered
 implementation. Compaction completed with `3` originals archived and `1`
 summary created. The source total was `7,248` bytes, and the summary is
-`4,494` bytes, for an estimated live `docs/memory/` reduction of `2,754`
-bytes (`38.0%`). P-020 `compaction_status` is `done`.
+`4,392` bytes, for an estimated live `docs/memory/` reduction of `2,856`
+bytes (`39.4%`). P-020 `compaction_status` is `done`.
 See [222-S P-020 compaction report](222-S-compaction-report.md) for the
 exact counts and archival trace links.
 

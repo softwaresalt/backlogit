@@ -14,7 +14,7 @@ docline:
 
 ## Invocation
 
-The `compact-context` skill ran with `target: memory/all` after Shipment
+The `compact-context` skill ran with mandatory `target: all` after Shipment
 `222-S` implementation merge and governed shipment closure. `ENGRAM_DEGRADED`
 applied, so no Engram CLI or MCP surface was invoked. This invocation satisfies
 the unconditional P-020 post-merge floor.
@@ -34,8 +34,8 @@ the unconditional P-020 post-merge floor.
 * Compacted summaries created: `1`
 * Files archived or moved: `3`
 * Compacted bytes: `7,248` source bytes
-* Summary bytes: `4,494`
-* Live `docs/memory/` byte reduction estimate: `2,754` bytes (`38.0%`)
+* Summary bytes: `4,392`
+* Live `docs/memory/` byte reduction estimate: `2,856` bytes (`39.4%`)
 * Active checkpoints preserved: `all`
 * Plans preserved: `all`
 * Other shipment memories preserved: `all`
