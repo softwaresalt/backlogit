@@ -75,10 +75,10 @@ model_routing:
       reasoning_effort: "high"
       context_tier: "long_context"
   ship:
-    model_family: "gemini-4-hydrogen"
-    model_provider: "google"
-    reasoning_effort: "high"
-    context_tier: "long_context" 
+    model_family: "mai-code-2"
+    model_provider: "microsoft"
+    reasoning_effort: "medium"
+    context_tier: "long_context"
     escalation:
       model_family: "gpt-6.2-sol"
       model_provider: "openai"
