@@ -615,11 +615,11 @@ This agent operates at **Tier 2 (Standard)** by default, but supports an indepen
 |---|---|---|
 | Orchestrator | 2 (overridden via `model_routing.orchestrator`) | `gemini-4-carbon` |
 | Stage | 3 (Frontier, `model_routing.stage`) | `gemini-4-carbon` |
-| Ship | 2 (overridden via `model_routing.ship`) | `gemini-4-hydrogen` |
+| Ship | 2 (overridden via `model_routing.ship`) | `mai-code-2` |
 | Auto-MergeInstall | 2 (Standard) | Inherits tier2 default (`mai-code-2`) |
 | Auto-Tune | 2 (Standard) | Inherits tier2 default (`mai-code-2`) |
 
-**Cross-provider routing**: Different roles and tiers can span multiple providers in this workspace (`google` for Orchestrator, Stage, Ship, Tier 3, and `alt_doc_review`; `microsoft` for Tier 2, Auto-MergeInstall, and Auto-Tune; `anthropic` for Tier 1; and `openai` for escalation and `anchor_review`). This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes each configured provider.
+**Cross-provider routing**: Different roles and tiers can span multiple providers in this workspace (`google` for Orchestrator, Stage, Tier 3, and `alt_doc_review`; `microsoft` for Ship, Tier 2, Auto-MergeInstall, and Auto-Tune; `anthropic` for Tier 1; and `openai` for escalation and `anchor_review`). This works when the environment supports the `model_family` and `model_provider` frontmatter fields and the operator's subscription includes each configured provider.
 
 **Configuration example** (in `.gsd/config.yaml`):
 
@@ -636,9 +636,9 @@ model_routing:
     reasoning_effort: medium
     context_tier: long_context
   ship:
-    model_family: gemini-4-hydrogen
-    model_provider: google
-    reasoning_effort: high
+    model_family: mai-code-2
+    model_provider: microsoft
+    reasoning_effort: medium
     context_tier: long_context
   tier2:
     model_family: mai-code-2

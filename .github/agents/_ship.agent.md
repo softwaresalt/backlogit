@@ -5,9 +5,9 @@ maturity: stable
 tools: vscode, execute, read, agent, edit, search, todo, vscode/memory, backlogit/*, engram/*, kbdb/search_local_docs, kbdb/search_semantic, kbdb/research_topic, kbdb/traverse_doc_links, kbdb/list_sources, kbdb/get_chunk_by_id, kbdb/get_document, kbdb/get_status
 model_tier: 2
 max_subagent_tier: 3
-reasoning_effort: "high"
-model_provider: "google"
-model_family: "gemini-4-hydrogen"
+reasoning_effort: "medium"
+model_provider: "microsoft"
+model_family: "mai-code-2"
 context_tier: "long_context"
 subagent_depth: 2
 ---
