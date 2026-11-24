@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "shipment_id": "222-S",
+  "feature_id": "221-F",
+  "merge_commit_sha": "740dba66604973a8adfd1f19e2489c389a64e207",
+  "phase": "post_close",
+  "archive_commit": "9984de55274e7810bf1492aa7c825cd6293924ac",
+  "invocation": {
+    "surface": "mcp",
+    "tool": "backlogit_ship_shipment",
+    "arguments": {
+      "id": "222-S",
+      "sha": "740dba66604973a8adfd1f19e2489c389a64e207",
+      "message": "Merge Shipment 222-S implementation PR #673",
+      "author": "_Ship"
+    },
+    "mutation_state": "completed"
+  },
+  "pre_close": {
+    "reconcile_report": ".backlogit/reconcile/222-S-pre-20261123T221145Z.md",
+    "manifest_members": [
+      {
+        "id": "221-F",
+        "artifact_type": "feature",
+        "location": "queue",
+        "declared_status": "active",
+        "classification": "feature-pending-governed-completion"
+      },
+      {
+        "id": "221.001-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.002-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.009-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.003-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.004-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.005-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.006-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.007-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.008-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      },
+      {
+        "id": "221.010-T",
+        "artifact_type": "task",
+        "location": "archive",
+        "declared_status": "done",
+        "parent_id": "221-F",
+        "classification": "pre-archived"
+      }
+    ],
+    "pre_archived_task_count": 10,
+    "recommendation": "PROCEED"
+  },
+  "post_close": {
+    "reconcile_reports": [
+      ".backlogit/reconcile/222-S-safe-close-20261123T221233Z.md",
+      ".backlogit/reconcile/222-S-post-20261123T221303Z.md"
+    ],
+    "shipment_status": "shipped",
+    "shipment_record_status": "archived",
+    "shipment_record_archived_status": "shipped",
+    "feature_record_status": "archived",
+    "feature_record_archived_status": "done",
+    "commit_sha": "740dba66604973a8adfd1f19e2489c389a64e207",
+    "returned_ids": [],
+    "archived_ids": [
+      "221-F",
+      "222-S"
+    ],
+    "pre_archived_task_ids_preserved": [
+      "221.001-T",
+      "221.002-T",
+      "221.009-T",
+      "221.003-T",
+      "221.004-T",
+      "221.005-T",
+      "221.006-T",
+      "221.007-T",
+      "221.008-T",
+      "221.010-T"
+    ],
+    "parent_id_preserved": true,
+    "p007_archive_integrity": "PASS",
+    "doctor_shipped_event_findings_for_222_S": 0,
+    "post_reconcile_recommendation": "PROCEED",
+    "non_member_untouched": true,
+    "postcondition_verdict": "pass",
+    "failures": []
+  },
+  "compaction": {
+    "skill": "compact-context",
+    "target": "all",
+    "engram_degraded": true,
+    "candidates": 3,
+    "summaries_created": 1,
+    "files_archived": 3,
+    "source_bytes": 7248,
+    "summary_bytes": 4392,
+    "live_memory_reduction_bytes": 2856,
+    "live_memory_reduction_percent": 39.4,
+    "summary_path": "docs/memory/compacted/2026-11-23-222-s-221-f-compacted.md",
+    "archived_paths": [
+      "docs/archive/memory/2026-11-22/222-s-served-root-handoff.md",
+      "docs/archive/memory/2026-11-22/222-s-session-summary.md",
+      "docs/archive/memory/2026-11-23/222-s-final-test-gate-halt.md"
+    ],
+    "original_paths": [
+      "docs/memory/2026-11-22/222-s-served-root-handoff.md",
+      "docs/memory/2026-11-22/222-s-session-summary.md",
+      "docs/memory/2026-11-23/222-s-final-test-gate-halt.md"
+    ],
+    "active_checkpoints_preserved": true,
+    "plans_preserved": true,
+    "unrelated_memories_preserved": true,
+    "status": "done",
+    "report": "docs/closure/222-S-compaction-report.md"
+  }
+}
